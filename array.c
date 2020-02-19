@@ -6608,6 +6608,44 @@ rb_ary_sum(int argc, VALUE *argv, VALUE ary)
     return v;
 }
 
+     hashes = [
+       { "a" => 100, "b" => 200 },
+       { "b" => 246, "c" => 300 },
+       { "b" => 357, "d" => 400 }
+     ]
+
+/*
+ *  call-seq:
+ *     ary.splat {|x| block }   -> obj
+ *
+ *  Yields the elements of the array as arguments to the block, and returns
+ *  the result of the block.  Useful for array methods that accept other
+ *  arrays as arguments.
+ *
+ *     arrays = [[1,2,3], [4], [5,6]]
+ *     arrays.splat(&:product)  #=> [[1,4,5], [1,4,6], [2,4,5], [2,4,6], [3,4,5], [3,4,6]]
+ *     arrays.splat(&:zip)      #=> [[1,4,5], [2,nil,6], [3,nil,nil]]
+ *     arrays.splat(&:union)    #=> [1, 2, 3, 4, 5, 6]
+ *
+ *     hashes = [
+ *       { "a" => 100, "b" => 200 },
+ *       { "b" => 246, "c" => 300 },
+ *       { "b" => 357, "d" => 400 }
+ *     ]
+ *
+ *     hashes.splat(&:merge)    #=> { "a"=>100, "b"=>357, "c"=>300, "d"=>400 }
+ *
+ *  See also Object#yield_self
+ */
+
+static VALUE
+rb_ary_splat(VALUE ary)
+{
+    VALUE ary0 = ary_make_shared_copy(ary);
+
+    return rb_yield_values2(RARRAY_LENINT(ary0), RARRAY_CONST_PTR(ary0));
+}
+
 static VALUE
 rb_ary_deconstruct(VALUE ary)
 {
@@ -6979,6 +7017,7 @@ Init_Array(void)
     rb_define_method(rb_cArray, "dig", rb_ary_dig, -1);
     rb_define_method(rb_cArray, "sum", rb_ary_sum, -1);
 
+    rb_define_method(rb_cArray, "splat", rb_ary_splat, 0);
     rb_define_method(rb_cArray, "deconstruct", rb_ary_deconstruct, 0);
 }
 
