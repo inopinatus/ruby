@@ -1,11 +1,5 @@
 name: MinGW
-on:
-  push:
-    branches:
-      - '*'
-  pull_request:
-    branches:
-      - '*'
+on: [push, pull_request]
 
 # Notes:
 # Action ENV TEMP and TMP are short 8.3 paths, but the long path differs.
@@ -45,7 +39,7 @@ jobs:
         shell: bash
       - name: Checkout a pull request
         run: |
-          git clone --single-branch --shallow-since=yesterday --branch=${{ github.event.pull_request.head.ref }} https://github.com/${{ github.event.pull_request.head.repo.full_name }} src
+          git clone --single-branch --depth=50 --branch=${{ github.event.pull_request.head.ref }} https://github.com/${{ github.event.pull_request.head.repo.full_name }} src
           git -C src reset --hard ${{ github.event.pull_request.head.sha }}
         if: github.event_name == 'pull_request'
       - run: ./src/tool/actions-commit-info.sh
@@ -77,12 +71,12 @@ jobs:
           sh -c "autoreconf -fi"
 
       - name: configure
+        working-directory: build
         run: |
           # Actions uses UTF8, causes test failures, similar to normal OS setup
           $PSDefaultParameterValues['*:Encoding'] = 'utf8'
           [Console]::OutputEncoding = [System.Text.Encoding]::GetEncoding("IBM437")
           [Console]::InputEncoding  = [System.Text.Encoding]::GetEncoding("IBM437")
-          cd build
           $config_args = "--build=$env:CHOST --host=$env:CHOST --target=$env:CHOST"
           Write-Host $config_args
           sh -c "../src/configure --disable-install-doc --prefix=/install $config_args"
@@ -90,67 +84,70 @@ jobs:
           # Get-Content ./config.log | foreach {Write-Output $_}
 
       - name: download unicode, gems, etc
+        working-directory: build
         run: |
           $jobs = [int]$env:NUMBER_OF_PROCESSORS + 1
-          cd build
           make -j $jobs update-unicode
           make -j $jobs update-gems
 
       - name: make all
-        timeout-minutes: 20
+        timeout-minutes: 40
+        working-directory: build
         run: |
           $jobs = [int]$env:NUMBER_OF_PROCESSORS + 1
-          make -C build -j $jobs V=1
+          make -j $jobs
 
       - name: make install
+        working-directory: build
         run: |
           # Actions uses UTF8, causes test failures, similar to normal OS setup
           $PSDefaultParameterValues['*:Encoding'] = 'utf8'
           [Console]::OutputEncoding = [System.Text.Encoding]::GetEncoding("IBM437")
           [Console]::InputEncoding  = [System.Text.Encoding]::GetEncoding("IBM437")
-          make -C build DESTDIR=.. install-nodoc
+          make DESTDIR=.. install-nodoc
 
       - name: test
         timeout-minutes: 5
+        working-directory: build
         run: |
-          $env:TMPDIR = "$pwd/temp"
-          make -C build test
+          $env:TMPDIR = "$pwd/../temp"
+          make test
 
       - name: test-all
-        timeout-minutes: 25
+        timeout-minutes: 50
+        working-directory: build
         run: |
-          $env:TMPDIR = "$pwd/temp"
+          $env:TMPDIR = "$pwd/../temp"
           # Actions uses UTF8, causes test failures, similar to normal OS setup
           $PSDefaultParameterValues['*:Encoding'] = 'utf8'
           [Console]::OutputEncoding = [System.Text.Encoding]::GetEncoding("IBM437")
           [Console]::InputEncoding  = [System.Text.Encoding]::GetEncoding("IBM437")
           $jobs = [int]$env:NUMBER_OF_PROCESSORS
-          make -C build test-all TESTOPTS="-j $jobs --retry --job-status=normal --show-skip --timeout-scale=1.5"
+          make test-all TESTOPTS="-j $jobs --retry --job-status=normal --show-skip --timeout-scale=1.5"
 
       - name: test-spec
         timeout-minutes: 10
+        working-directory: src/spec/ruby
         run: |
-          $env:TMPDIR = "$pwd/temp"
-          $env:PATH = "$pwd/install/bin;$env:PATH"
+          $env:TMPDIR = "$pwd/../../../temp"
+          $env:PATH = "$pwd/../../../install/bin;$env:PATH"
           # Actions uses UTF8, causes test failures, similar to normal OS setup
           $PSDefaultParameterValues['*:Encoding'] = 'utf8'
           [Console]::OutputEncoding = [System.Text.Encoding]::GetEncoding("IBM437")
           [Console]::InputEncoding  = [System.Text.Encoding]::GetEncoding("IBM437")
           ruby -v
-          cd src/spec/ruby
           ruby ../mspec/bin/mspec -j
 
       - uses: k0kubun/action-slack@v2.0.0
         with:
           payload: |
             {
-              "attachments": [{
-                "text": "${{ github.workflow }} / ${{ matrix.test_task }} <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|${{ steps.commit_info.outputs.COMMIT_DATE }} #${{ steps.commit_info.outputs.COMMIT_NUMBER_OF_DAY }}> " +
-                        "(<https://github.com/${{ github.repository }}/commit/${{ github.sha }}|" + "${{ github.sha }}".substring(0, 10) + ">) " +
-                        "of ${{ github.repository }}@" + "${{ github.ref }}".split('/').reverse()[0] + " by ${{ github.event.head_commit.committer.name }} failed",
-                "color": "danger"
-              }]
+              "ci": "GitHub Actions",
+              "env": "${{ github.workflow }} / ${{ matrix.test_task }}",
+              "url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+              "commit": "${{ github.sha }}",
+              "branch": "${{ github.ref }}".split('/').reverse()[0]
             }
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SIMPLER_ALERTS_URL }} # ruby-lang slack: ruby/simpler-alerts-bot
         if: failure() && github.event_name == 'push'

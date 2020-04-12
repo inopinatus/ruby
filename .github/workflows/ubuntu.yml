@@ -1,16 +1,10 @@
 name: Ubuntu
-on:
-  push:
-    branches:
-      - '*'
-  pull_request:
-    branches:
-      - '*'
+on: [push, pull_request]
 jobs:
   make:
     strategy:
       matrix:
-        test_task: [ "check", "test-bundler", "test-bundled-gems", "test-all TESTS=--repeat-count=2" ]
+        test_task: [ "check", "test-bundler", "test-bundled-gems", "test-all TESTS=--repeat-count=2", "leaked-globals" ]
         os: [ubuntu-latest, ubuntu-16.04]
         exclude:
           - test_task: test-bundler
@@ -19,36 +13,12 @@ jobs:
             os: ubuntu-16.04
           - test_task: "test-all TESTS=--repeat-count=2"
             os: ubuntu-16.04
+          - test_task: leaked-globals
+            os: ubuntu-16.04
       fail-fast: false
     runs-on: ${{ matrix.os }}
     if: "!contains(github.event.head_commit.message, '[ci skip]')"
     steps:
-      - run: env | sort
-      - name: Dump GitHub context
-        env:
-          GITHUB_CONTEXT: ${{ toJson(github) }}
-        run: echo "$GITHUB_CONTEXT"
-      - name: Dump job context
-        env:
-          JOB_CONTEXT: ${{ toJson(job) }}
-        run: echo "$JOB_CONTEXT"
-      - name: Dump steps context
-        env:
-          STEPS_CONTEXT: ${{ toJson(steps) }}
-        run: echo "$STEPS_CONTEXT"
-      - name: Dump runner context
-        env:
-          RUNNER_CONTEXT: ${{ toJson(runner) }}
-        run: echo "$RUNNER_CONTEXT"
-      - name: Dump strategy context
-        env:
-          STRATEGY_CONTEXT: ${{ toJson(strategy) }}
-        run: echo "$STRATEGY_CONTEXT"
-      - name: Dump matrix context
-        env:
-          MATRIX_CONTEXT: ${{ toJson(matrix) }}
-        run: echo "$MATRIX_CONTEXT"
-
       - name: Install libraries
         run: |
           set -x
@@ -62,7 +32,7 @@ jobs:
         if: github.event_name == 'push'
       - name: Checkout a pull request
         run: |
-          git clone --single-branch --shallow-since=yesterday --branch=${{ github.event.pull_request.head.ref }} https://github.com/${{ github.event.pull_request.head.repo.full_name }} src
+          git clone --single-branch --depth=50 --branch=${{ github.event.pull_request.head.ref }} https://github.com/${{ github.event.pull_request.head.repo.full_name }} src
           git -C src reset --hard ${{ github.event.pull_request.head.sha }}
         if: github.event_name == 'pull_request'
       - run: ./src/tool/actions-commit-info.sh
@@ -74,43 +44,38 @@ jobs:
       - name: Set ENV
         run: |
           echo '::set-env name=JOBS::'-j$((1 + $(nproc --all)))
-      - name: Autoconf
-        run: cd src && exec autoconf
-      - name: configure
-        run: |
-          mkdir build
-          cd build
-          ../src/configure -C --disable-install-doc
-      - name: Make
-        run: make -C build $JOBS
-      - name: Extract gems
-        run: make -C build update-gems extract-gems
+      - run: autoconf
+        working-directory: src
+      - run: mkdir build
+      - name: Run confiugre
+        run: ../src/configure -C --disable-install-doc
+        working-directory: build
+      - run: make $JOBS
+        working-directory: build
+      - run: make prepare-gems
+        working-directory: build
         if: matrix.test_task == 'check'
       - name: Create dummy files in build dir
         run: |
-          cd build
           ./miniruby -e '(("a".."z").to_a+("A".."Z").to_a+("0".."9").to_a+%w[foo bar test zzz]).each{|basename|File.write("#{basename}.rb", "raise %(do not load #{basename}.rb)")}'
+        working-directory: build
         if: matrix.test_task == 'check'
-      - name: Tests
-        run: make -C build $JOBS -s ${{ matrix.test_task }}
+      - run: make $JOBS -s ${{ matrix.test_task }}
+        working-directory: build
         env:
           RUBY_TESTOPTS: "-q --tty=no"
           # Remove minitest from TEST_BUNDLED_GEMS_ALLOW_FAILURES if https://github.com/seattlerb/minitest/pull/798 is resolved
-          # rss needs to add workaround for the non rexml environment
-          TEST_BUNDLED_GEMS_ALLOW_FAILURES: "minitest,xmlrpc,rss"
-      - name: Leaked Globals
-        run: make -C build -s leaked-globals
+          TEST_BUNDLED_GEMS_ALLOW_FAILURES: "minitest,xmlrpc"
       - uses: k0kubun/action-slack@v2.0.0
         with:
           payload: |
             {
-              "attachments": [{
-                "text": "${{ matrix.os }} / ${{ matrix.test_task }} <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|${{ steps.commit_info.outputs.COMMIT_DATE }} #${{ steps.commit_info.outputs.COMMIT_NUMBER_OF_DAY }}> " +
-                        "(<https://github.com/${{ github.repository }}/commit/${{ github.sha }}|" + "${{ github.sha }}".substring(0, 10) + ">) " +
-                        "of ${{ github.repository }}@" + "${{ github.ref }}".split('/').reverse()[0] + " by ${{ github.event.head_commit.committer.name }} failed",
-                "color": "danger"
-              }]
+              "ci": "GitHub Actions",
+              "env": "${{ matrix.os }} / ${{ matrix.test_task }}",
+              "url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+              "commit": "${{ github.sha }}",
+              "branch": "${{ github.ref }}".split('/').reverse()[0]
             }
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SIMPLER_ALERTS_URL }} # ruby-lang slack: ruby/simpler-alerts-bot
         if: failure() && github.event_name == 'push'

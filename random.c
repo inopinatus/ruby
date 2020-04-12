@@ -9,7 +9,7 @@
 
 **********************************************************************/
 
-#include "ruby/config.h"
+#include "ruby/3/config.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -56,7 +56,6 @@
 
 #include "internal.h"
 #include "internal/compilers.h"
-#include "internal/error.h"
 #include "internal/numeric.h"
 #include "internal/random.h"
 #include "internal/sanitizers.h"
@@ -403,6 +402,8 @@ fill_random_bytes_syscall(void *seed, size_t size, int unused)
 	old_prov = (HCRYPTPROV)ATOMIC_PTR_CAS(perm_prov, 0, prov);
 	if (LIKELY(!old_prov)) { /* no other threads acquired */
 	    if (prov != (HCRYPTPROV)INVALID_HANDLE_VALUE) {
+#undef RUBY_UNTYPED_DATA_WARNING
+#define RUBY_UNTYPED_DATA_WARNING 0
 		rb_gc_register_mark_object(Data_Wrap_Struct(0, 0, release_crypt, &perm_prov));
 	    }
 	}

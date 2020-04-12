@@ -23,17 +23,17 @@
  * \{
  */
 
-#include "ruby/config.h"
+#include "ruby/3/config.h"
 #include <ctype.h>
 
 #include "constant.h"
 #include "id_table.h"
 #include "internal.h"
 #include "internal/class.h"
-#include "internal/error.h"
 #include "internal/eval.h"
 #include "internal/hash.h"
 #include "internal/object.h"
+#include "internal/string.h"
 #include "internal/variable.h"
 #include "ruby/st.h"
 #include "vm_core.h"
@@ -883,6 +883,26 @@ rb_include_module(VALUE klass, VALUE module)
     changed = include_modules_at(klass, RCLASS_ORIGIN(klass), module, TRUE);
     if (changed < 0)
 	rb_raise(rb_eArgError, "cyclic include detected");
+
+    if (RB_TYPE_P(klass, T_MODULE)) {
+        rb_subclass_entry_t *iclass = RCLASS_EXT(klass)->subclasses;
+        int do_include = 1;
+        while (iclass) {
+            VALUE check_class = iclass->klass;
+            while (check_class) {
+                if (RB_TYPE_P(check_class, T_ICLASS) &&
+                        (RBASIC(check_class)->klass == module)) {
+                    do_include = 0;
+                }
+                check_class = RCLASS_SUPER(check_class);
+            }
+
+            if (do_include) {
+                include_modules_at(iclass->klass, RCLASS_ORIGIN(iclass->klass), module, TRUE);
+            }
+            iclass = iclass->next;
+        }
+    }
 }
 
 static enum rb_id_table_iterator_result
@@ -894,12 +914,21 @@ add_refined_method_entry_i(ID key, VALUE value, void *data)
 
 static void ensure_origin(VALUE klass);
 
+static enum rb_id_table_iterator_result
+clear_module_cache_i(ID id, VALUE val, void *data)
+{
+    VALUE klass = (VALUE)data;
+    rb_clear_method_cache(klass, id);
+    return ID_TABLE_CONTINUE;
+}
+
 static int
 include_modules_at(const VALUE klass, VALUE c, VALUE module, int search_super)
 {
     VALUE p, iclass;
     int method_changed = 0, constant_changed = 0;
     struct rb_id_table *const klass_m_tbl = RCLASS_M_TBL(RCLASS_ORIGIN(klass));
+    VALUE original_klass = klass;
 
     if (FL_TEST(module, RCLASS_REFINED_BY_ANY)) {
         ensure_origin(module);
@@ -912,7 +941,7 @@ include_modules_at(const VALUE klass, VALUE c, VALUE module, int search_super)
 	if (klass_m_tbl && klass_m_tbl == RCLASS_M_TBL(module))
 	    return -1;
 	/* ignore if the module included already in superclasses */
-	for (p = RCLASS_SUPER(klass); p; p = RCLASS_SUPER(p)) {
+        for (p = RCLASS_SUPER(klass); p; p = RCLASS_SUPER(p)) {
 	    int type = BUILTIN_TYPE(p);
 	    if (type == T_ICLASS) {
 		if (RCLASS_M_TBL(p) == RCLASS_M_TBL(module)) {
@@ -924,29 +953,46 @@ include_modules_at(const VALUE klass, VALUE c, VALUE module, int search_super)
 	    }
 	    else if (type == T_CLASS) {
 		if (!search_super) break;
-		superclass_seen = TRUE;
+                superclass_seen = TRUE;
 	    }
 	}
-	iclass = rb_include_class_new(module, RCLASS_SUPER(c));
+
+        VALUE super_class = RCLASS_SUPER(c);
+
+        // invalidate inline method cache
+        tbl = RMODULE_M_TBL(module);
+        if (tbl && rb_id_table_size(tbl)) {
+            if (search_super) { // include
+                if (super_class && !RB_TYPE_P(super_class, T_MODULE)) {
+                    rb_id_table_foreach(tbl, clear_module_cache_i, (void *)super_class);
+                }
+            }
+            else { // prepend
+                if (!RB_TYPE_P(original_klass, T_MODULE)) {
+                    rb_id_table_foreach(tbl, clear_module_cache_i, (void *)original_klass);
+                }
+            }
+            method_changed = 1;
+        }
+
+        // setup T_ICLASS for the include/prepend module
+	iclass = rb_include_class_new(module, super_class);
 	c = RCLASS_SET_SUPER(c, iclass);
         RCLASS_SET_INCLUDER(iclass, klass);
 
 	{
 	    VALUE m = module;
-	    if (BUILTIN_TYPE(m) == T_ICLASS) m = RBASIC(m)->klass;
-	    rb_module_add_to_subclasses_list(m, iclass);
+            if (BUILTIN_TYPE(m) == T_ICLASS) m = RBASIC(m)->klass;
+            rb_module_add_to_subclasses_list(m, iclass);
 	}
 
 	if (FL_TEST(klass, RMODULE_IS_REFINEMENT)) {
 	    VALUE refined_class =
 		rb_refinement_module_get_refined_class(klass);
 
-	    rb_id_table_foreach(RMODULE_M_TBL(module), add_refined_method_entry_i, (void *)refined_class);
+            rb_id_table_foreach(RMODULE_M_TBL(module), add_refined_method_entry_i, (void *)refined_class);
 	    FL_SET(c, RMODULE_INCLUDED_INTO_REFINEMENT);
 	}
-
-	tbl = RMODULE_M_TBL(module);
-	if (tbl && rb_id_table_size(tbl)) method_changed = 1;
 
 	tbl = RMODULE_CONST_TBL(module);
 	if (tbl && rb_id_table_size(tbl)) constant_changed = 1;
@@ -954,7 +1000,6 @@ include_modules_at(const VALUE klass, VALUE c, VALUE module, int search_super)
 	module = RCLASS_SUPER(module);
     }
 
-    if (method_changed) rb_clear_method_cache_by_class(klass);
     if (constant_changed) rb_clear_constant_cache();
 
     return method_changed;
@@ -1667,6 +1712,8 @@ singleton_class_of(VALUE obj)
 	  case T_STRING:
 	    if (FL_TEST_RAW(obj, RSTRING_FSTR)) goto no_singleton;
 	    break;
+          default:
+            break;
 	}
     }
 

@@ -11,7 +11,7 @@
 
 **********************************************************************/
 
-#include "ruby/config.h"
+#include "ruby/3/config.h"
 
 #ifdef HAVE_SYS_PRCTL_H
 #include <sys/prctl.h>
@@ -38,6 +38,7 @@
 
 NORETURN(void rb_raise_jump(VALUE, VALUE));
 void rb_ec_clear_current_thread_trace_func(const rb_execution_context_t *ec);
+void rb_ec_clear_all_trace_func(const rb_execution_context_t *ec);
 
 static int rb_ec_cleanup(rb_execution_context_t *ec, volatile int ex);
 static int rb_ec_exec_node(rb_execution_context_t *ec, void *n);
@@ -152,7 +153,7 @@ rb_ec_teardown(rb_execution_context_t *ec)
     }
     EC_POP_TAG();
     rb_ec_exec_end_proc(ec);
-    rb_ec_clear_current_thread_trace_func(ec);
+    rb_ec_clear_all_trace_func(ec);
 }
 
 static void
@@ -467,6 +468,8 @@ rb_class_modify_check(VALUE klass)
 		  case T_CLASS:
 		    desc = "Class";
 		    break;
+                  default:
+                    break;
 		}
 	    }
 	}
@@ -974,7 +977,7 @@ rb_rescue2(VALUE (* b_proc) (VALUE), VALUE data1,
 
 /*!
  * \copydoc rb_rescue2
- * \param[in] args exception classes, terminated by 0.
+ * \param[in] args exception classes, terminated by (VALUE)0.
  */
 VALUE
 rb_vrescue2(VALUE (* b_proc) (VALUE), VALUE data1,
@@ -1476,7 +1479,7 @@ rb_using_module(const rb_cref_t *cref, VALUE module)
 {
     Check_Type(module, T_MODULE);
     using_module_recursive(cref, module);
-    rb_clear_method_cache_by_class(rb_cObject);
+    rb_clear_method_cache_all();
 }
 
 /*! \private */
@@ -1996,7 +1999,10 @@ f_current_dirname(VALUE _)
  *  call-seq:
  *     global_variables    -> array
  *
- *  Returns an array of the names of global variables.
+ *  Returns an array of the names of global variables. This includes
+ *  special regexp global variables such as <tt>$~</tt> and <tt>$+</tt>,
+ *  but does not include the numbered regexp global variables (<tt>$1</tt>,
+ *  <tt>$2</tt>, etc.).
  *
  *     global_variables.grep /std/   #=> [:$stdin, :$stdout, :$stderr]
  */

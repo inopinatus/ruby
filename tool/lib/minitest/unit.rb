@@ -446,6 +446,16 @@ module MiniTest
       assert caught, message(msg) { default }
     end
 
+    def assert_path_exists(path, msg = nil)
+      msg = message(msg) { "Expected path '#{path}' to exist" }
+      assert File.exist?(path), msg
+    end
+
+    def refute_path_exists(path, msg = nil)
+      msg = message(msg) { "Expected path '#{path}' to not exist" }
+      refute File.exist?(path), msg
+    end
+
     ##
     # Captures $stdout and $stderr into strings:
     #
@@ -763,7 +773,7 @@ module MiniTest
     # Lazy accessor for options.
 
     def options
-      @options ||= {}
+      @options ||= {seed: 42}
     end
 
     @@installed_at_exit ||= false
@@ -1297,6 +1307,8 @@ module MiniTest
         start_time = Time.now
 
         result = ""
+        srand(runner.options[:seed])
+
         begin
           @passed = nil
           self.before_setup
@@ -1385,11 +1397,16 @@ module MiniTest
       end
 
       def self.test_order # :nodoc:
-        :random
+        :sorted
       end
 
       def self.test_suites # :nodoc:
-        @@test_suites.keys.sort_by { |ts| ts.name.to_s }
+        case self.test_order
+        when :random
+          @@test_suites.keys.shuffle
+        else
+          @@test_suites.keys.sort_by { |ts| ts.name.to_s }
+        end
       end
 
       def self.test_methods # :nodoc:

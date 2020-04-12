@@ -12,8 +12,10 @@ prelude.rb
 rbconfig.rb
 array.rb
 ast.rb
+dir.rb
 gc.rb
 io.rb
+kernel.rb
 pack.rb
 trace_point.rb
 warning.rb

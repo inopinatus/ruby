@@ -190,6 +190,218 @@ class TestKeywordArguments < Test::Unit::TestCase
     assert_equal(["bar", 111111], f[str: "bar", num: 111111])
   end
 
+  def test_keyword_splat_new
+    kw = {}
+    h = {a: 1}
+
+    def self.assert_equal_not_same(kw, res)
+      assert_instance_of(Hash, res)
+      assert_equal(kw, res)
+      assert_not_same(kw, res)
+    end
+
+    def self.y(**kw) kw end
+    m = method(:y)
+    assert_equal(false, y(**{}).frozen?)
+    assert_equal_not_same(kw, y(**kw))
+    assert_equal_not_same(h, y(**h))
+    assert_equal(false, send(:y, **{}).frozen?)
+    assert_equal_not_same(kw, send(:y, **kw))
+    assert_equal_not_same(h, send(:y, **h))
+    assert_equal(false, public_send(:y, **{}).frozen?)
+    assert_equal_not_same(kw, public_send(:y, **kw))
+    assert_equal_not_same(h, public_send(:y, **h))
+    assert_equal(false, m.(**{}).frozen?)
+    assert_equal_not_same(kw, m.(**kw))
+    assert_equal_not_same(h, m.(**h))
+    assert_equal(false, m.send(:call, **{}).frozen?)
+    assert_equal_not_same(kw, m.send(:call, **kw))
+    assert_equal_not_same(h, m.send(:call, **h))
+
+    m = method(:send)
+    assert_equal(false, m.(:y, **{}).frozen?)
+    assert_equal_not_same(kw, m.(:y, **kw))
+    assert_equal_not_same(h, m.(:y, **h))
+    assert_equal(false, m.send(:call, :y,  **{}).frozen?)
+    assert_equal_not_same(kw, m.send(:call, :y, **kw))
+    assert_equal_not_same(h, m.send(:call, :y, **h))
+
+    singleton_class.send(:remove_method, :y)
+    define_singleton_method(:y) { |**kw| kw }
+    m = method(:y)
+    assert_equal(false, y(**{}).frozen?)
+    assert_equal_not_same(kw, y(**kw))
+    assert_equal_not_same(h, y(**h))
+    assert_equal(false, send(:y, **{}).frozen?)
+    assert_equal_not_same(kw, send(:y, **kw))
+    assert_equal_not_same(h, send(:y, **h))
+    assert_equal(false, public_send(:y, **{}).frozen?)
+    assert_equal_not_same(kw, public_send(:y, **kw))
+    assert_equal_not_same(h, public_send(:y, **h))
+    assert_equal(false, m.(**{}).frozen?)
+    assert_equal_not_same(kw, m.(**kw))
+    assert_equal_not_same(h, m.(**h))
+    assert_equal(false, m.send(:call, **{}).frozen?)
+    assert_equal_not_same(kw, m.send(:call, **kw))
+    assert_equal_not_same(h, m.send(:call, **h))
+
+    y = lambda { |**kw| kw }
+    m = y.method(:call)
+    assert_equal(false, y.(**{}).frozen?)
+    assert_equal_not_same(kw, y.(**kw))
+    assert_equal_not_same(h, y.(**h))
+    assert_equal(false, y.send(:call, **{}).frozen?)
+    assert_equal_not_same(kw, y.send(:call, **kw))
+    assert_equal_not_same(h, y.send(:call, **h))
+    assert_equal(false, y.public_send(:call, **{}).frozen?)
+    assert_equal_not_same(kw, y.public_send(:call, **kw))
+    assert_equal_not_same(h, y.public_send(:call, **h))
+    assert_equal(false, m.(**{}).frozen?)
+    assert_equal_not_same(kw, m.(**kw))
+    assert_equal_not_same(h, m.(**h))
+    assert_equal(false, m.send(:call, **{}).frozen?)
+    assert_equal_not_same(kw, m.send(:call, **kw))
+    assert_equal_not_same(h, m.send(:call, **h))
+
+    y = :y.to_proc
+    m = y.method(:call)
+    assert_equal(false, y.(self, **{}).frozen?)
+    assert_equal_not_same(kw, y.(self, **kw))
+    assert_equal_not_same(h, y.(self, **h))
+    assert_equal(false, y.send(:call, self, **{}).frozen?)
+    assert_equal_not_same(kw, y.send(:call, self, **kw))
+    assert_equal_not_same(h, y.send(:call, self, **h))
+    assert_equal(false, y.public_send(:call, self, **{}).frozen?)
+    assert_equal_not_same(kw, y.public_send(:call, self, **kw))
+    assert_equal_not_same(h, y.public_send(:call, self, **h))
+    assert_equal(false, m.(self, **{}).frozen?)
+    assert_equal_not_same(kw, m.(self, **kw))
+    assert_equal_not_same(h, m.(self, **h))
+    assert_equal(false, m.send(:call, self, **{}).frozen?)
+    assert_equal_not_same(kw, m.send(:call, self, **kw))
+    assert_equal_not_same(h, m.send(:call, self, **h))
+
+    c = Class.new do
+      def y(**kw) kw end
+    end
+    o = c.new
+    def o.y(**kw) super end
+    m = o.method(:y)
+    assert_equal(false, o.y(**{}).frozen?)
+    assert_equal_not_same(kw, o.y(**kw))
+    assert_equal_not_same(h, o.y(**h))
+    assert_equal(false, o.send(:y, **{}).frozen?)
+    assert_equal_not_same(kw, o.send(:y, **kw))
+    assert_equal_not_same(h, o.send(:y, **h))
+    assert_equal(false, o.public_send(:y, **{}).frozen?)
+    assert_equal_not_same(kw, o.public_send(:y, **kw))
+    assert_equal_not_same(h, o.public_send(:y, **h))
+    assert_equal(false, m.(**{}).frozen?)
+    assert_equal_not_same(kw, m.(**kw))
+    assert_equal_not_same(h, m.(**h))
+    assert_equal(false, m.send(:call, **{}).frozen?)
+    assert_equal_not_same(kw, m.send(:call, **kw))
+    assert_equal_not_same(h, m.send(:call, **h))
+
+    o.singleton_class.send(:remove_method, :y)
+    def o.y(**kw) super(**kw) end
+    assert_equal(false, o.y(**{}).frozen?)
+    assert_equal_not_same(kw, o.y(**kw))
+    assert_equal_not_same(h, o.y(**h))
+    assert_equal(false, o.send(:y, **{}).frozen?)
+    assert_equal_not_same(kw, o.send(:y, **kw))
+    assert_equal_not_same(h, o.send(:y, **h))
+    assert_equal(false, o.public_send(:y, **{}).frozen?)
+    assert_equal_not_same(kw, o.public_send(:y, **kw))
+    assert_equal_not_same(h, o.public_send(:y, **h))
+    assert_equal(false, m.(**{}).frozen?)
+    assert_equal_not_same(kw, m.(**kw))
+    assert_equal_not_same(h, m.(**h))
+    assert_equal(false, m.send(:call, **{}).frozen?)
+    assert_equal_not_same(kw, m.send(:call, **kw))
+    assert_equal_not_same(h, m.send(:call, **h))
+
+    c = Class.new do
+      def method_missing(_, **kw) kw end
+    end
+    o = c.new
+    def o.y(**kw) super end
+    m = o.method(:y)
+    assert_equal(false, o.y(**{}).frozen?)
+    assert_equal_not_same(kw, o.y(**kw))
+    assert_equal_not_same(h, o.y(**h))
+    assert_equal(false, o.send(:y, **{}).frozen?)
+    assert_equal_not_same(kw, o.send(:y, **kw))
+    assert_equal_not_same(h, o.send(:y, **h))
+    assert_equal(false, o.public_send(:y, **{}).frozen?)
+    assert_equal_not_same(kw, o.public_send(:y, **kw))
+    assert_equal_not_same(h, o.public_send(:y, **h))
+    assert_equal(false, m.(**{}).frozen?)
+    assert_equal_not_same(kw, m.(**kw))
+    assert_equal_not_same(h, m.(**h))
+    assert_equal(false, m.send(:call, **{}).frozen?)
+    assert_equal_not_same(kw, m.send(:call, **kw))
+    assert_equal_not_same(h, m.send(:call, **h))
+
+    o.singleton_class.send(:remove_method, :y)
+    def o.y(**kw) super(**kw) end
+    assert_equal(false, o.y(**{}).frozen?)
+    assert_equal_not_same(kw, o.y(**kw))
+    assert_equal_not_same(h, o.y(**h))
+    assert_equal(false, o.send(:y, **{}).frozen?)
+    assert_equal_not_same(kw, o.send(:y, **kw))
+    assert_equal_not_same(h, o.send(:y, **h))
+    assert_equal(false, o.public_send(:y, **{}).frozen?)
+    assert_equal_not_same(kw, o.public_send(:y, **kw))
+    assert_equal_not_same(h, o.public_send(:y, **h))
+    assert_equal(false, m.(**{}).frozen?)
+    assert_equal_not_same(kw, m.(**kw))
+    assert_equal_not_same(h, m.(**h))
+    assert_equal(false, m.send(:call, **{}).frozen?)
+    assert_equal_not_same(kw, m.send(:call, **kw))
+    assert_equal_not_same(h, m.send(:call, **h))
+
+    c = Class.new do
+      attr_reader :kw
+      def initialize(**kw) @kw = kw end
+    end
+    m = c.method(:new)
+    assert_equal(false, c.new(**{}).kw.frozen?)
+    assert_equal_not_same(kw, c.new(**kw).kw)
+    assert_equal_not_same(h, c.new(**h).kw)
+    assert_equal(false, c.send(:new, **{}).kw.frozen?)
+    assert_equal_not_same(kw, c.send(:new, **kw).kw)
+    assert_equal_not_same(h, c.send(:new, **h).kw)
+    assert_equal(false, c.public_send(:new, **{}).kw.frozen?)
+    assert_equal_not_same(kw, c.public_send(:new, **kw).kw)
+    assert_equal_not_same(h, c.public_send(:new, **h).kw)
+    assert_equal(false, m.(**{}).kw.frozen?)
+    assert_equal_not_same(kw, m.(**kw).kw)
+    assert_equal_not_same(h, m.(**h).kw)
+    assert_equal(false, m.send(:call, **{}).kw.frozen?)
+    assert_equal_not_same(kw, m.send(:call, **kw).kw)
+    assert_equal_not_same(h, m.send(:call, **h).kw)
+
+    singleton_class.send(:attr_writer, :y)
+    m = method(:y=)
+    assert_equal_not_same(h, send(:y=, **h))
+    assert_equal_not_same(h, public_send(:y=, **h))
+    assert_equal_not_same(h, m.(**h))
+    assert_equal_not_same(h, m.send(:call, **h))
+
+    singleton_class.send(:remove_method, :y)
+    def self.method_missing(_, **kw) kw end
+    assert_equal(false, y(**{}).frozen?)
+    assert_equal_not_same(kw, y(**kw))
+    assert_equal_not_same(h, y(**h))
+    assert_equal(false, send(:y, **{}).frozen?)
+    assert_equal_not_same(kw, send(:y, **kw))
+    assert_equal_not_same(h, send(:y, **h))
+    assert_equal(false, public_send(:y, **{}).frozen?)
+    assert_equal_not_same(kw, public_send(:y, **kw))
+    assert_equal_not_same(h, public_send(:y, **h))
+  end
+
   def test_regular_kwsplat
     kw = {}
     h = {:a=>1}
@@ -3284,15 +3496,20 @@ class TestKeywordArguments < Test::Unit::TestCase
     bug7665 = '[ruby-core:51278]'
     bug8463 = '[ruby-core:55203] [Bug #8463]'
     a = [*%w[foo bar], {zzz: 42}]
-    expect = a + [{}]
-    assert_equal(expect, rest_keyrest(*a), bug7665)
+    splat_expect = a + [{}]
+    nonsplat_expect = [a, {}]
+    assert_equal(splat_expect, rest_keyrest(*a), bug7665)
+    assert_equal(nonsplat_expect, rest_keyrest(a), bug7665)
+
     pr = proc {|*args, **opt| next *args, opt}
-    assert_equal(expect, pr.call(*a), bug7665)
-    assert_equal(expect, pr.call(a), bug8463)
+    assert_equal(splat_expect, pr.call(*a), bug7665)
+    assert_equal(nonsplat_expect, pr.call(a), bug8463)
+
     pr = proc {|a, *b, **opt| next a, *b, opt}
-    assert_equal(expect, pr.call(a), bug8463)
+    assert_equal(splat_expect, pr.call(a), bug8463)
+
     pr = proc {|a, **opt| next a, opt}
-    assert_equal(expect.values_at(0, -1), pr.call(expect), bug8463)
+    assert_equal(splat_expect.values_at(0, -1), pr.call(splat_expect), bug8463)
   end
 
   def req_plus_keyword(x, **h)
@@ -3662,7 +3879,7 @@ class TestKeywordArguments < Test::Unit::TestCase
 
   def test_nonsymbol_key
     result = m(["a" => 10]) { |a = nil, **b| [a, b] }
-    assert_equal([{"a" => 10}, {}], result)
+    assert_equal([[{"a" => 10}], {}], result)
   end
 
   def method_for_test_to_hash_call_during_setup_complex_parameters k1:, k2:, **rest_kw

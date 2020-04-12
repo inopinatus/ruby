@@ -1,13 +1,11 @@
-#ifndef INTERNAL_BITS_H /* -*- C -*- */
-#define INTERNAL_BITS_H
-/**
+/**                                                         \noop-*-C-*-vi:ft=c
  * @file
- * @brief      Internal header for bitwise integer algorithms.
- * @author     \@shyouhei
+ * @author     Ruby developers <ruby-core@ruby-lang.org>
  * @copyright  This  file  is   a  part  of  the   programming  language  Ruby.
  *             Permission  is hereby  granted,  to  either redistribute  and/or
  *             modify this file, provided that  the conditions mentioned in the
  *             file COPYING are met.  Consult the file for details.
+ * @brief      Internal header for bitwise integer algorithms.
  * @see        Henry S. Warren Jr., "Hacker's Delight" (2nd ed.), 2013.
  * @see        SEI CERT C Coding Standard  INT32-C.  "Ensure that operations on
  *             signed integers do not result in overflow"
@@ -26,7 +24,9 @@
  * @see        https://software.intel.com/sites/landingpage/IntrinsicsGuide/#text=_rotr64
  * @see        https://stackoverflow.com/a/776523
  */
-#include "ruby/config.h"
+#ifndef INTERNAL_BITS_H
+#define INTERNAL_BITS_H
+#include "ruby/3/config.h"
 #include <limits.h>             /* for CHAR_BITS */
 #include <stdint.h>             /* for uintptr_t */
 #include "internal/compilers.h" /* for MSC_VERSION_SINCE */
@@ -112,7 +112,7 @@
 /* and GCC permits bitfields for integers other than int */
 # define MUL_OVERFLOW_FIXNUM_P(a, b) \
     __extension__ ({ \
-        struct { long fixnum : sizeof(long) * CHAR_BIT - 1; } c; \
+        struct { long fixnum : sizeof(long) * CHAR_BIT - 1; } c = { 0 }; \
         __builtin_mul_overflow_p((a), (b), c.fixnum); \
     })
 #else
@@ -230,7 +230,7 @@ static inline unsigned int
 nlz_int32(uint32_t x)
 {
 #if defined(_MSC_VER) && defined(__AVX2__)
-    /* Note: It seems there is no such tihng like __LZCNT__ predefined in MSVC.
+    /* Note: It seems there is no such thing like __LZCNT__ predefined in MSVC.
      * AMD  CPUs have  had this  instruction for  decades (since  K10) but  for
      * Intel, Haswell is  the oldest one.  We need to  use __AVX2__ for maximum
      * safety. */

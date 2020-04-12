@@ -27,8 +27,8 @@ class TestGemCommandsContentsCommand < Gem::TestCase
       @cmd.execute
     end
 
-    assert_match %r|lib/foo\.rb|, @ui.output
-    assert_match %r|Rakefile|, @ui.output
+    assert_match %r{lib/foo\.rb}, @ui.output
+    assert_match %r{Rakefile}, @ui.output
     assert_equal "", @ui.error
   end
 
@@ -42,9 +42,9 @@ class TestGemCommandsContentsCommand < Gem::TestCase
       @cmd.execute
     end
 
-    assert_match %r|lib/foo\.rb|, @ui.output
-    assert_match %r|lib/bar\.rb|, @ui.output
-    assert_match %r|Rakefile|, @ui.output
+    assert_match %r{lib/foo\.rb}, @ui.output
+    assert_match %r{lib/bar\.rb}, @ui.output
+    assert_match %r{Rakefile}, @ui.output
     assert_equal "", @ui.error
   end
 
@@ -57,8 +57,8 @@ class TestGemCommandsContentsCommand < Gem::TestCase
       end
     end
 
-    assert_match %r|Unable to find gem 'foo' in default gem paths|, @ui.output
-    assert_match %r|Directories searched:|, @ui.output
+    assert_match %r{Unable to find gem 'foo' in default gem paths}, @ui.output
+    assert_match %r{Directories searched:}, @ui.output
     assert_equal "", @ui.error
   end
 
@@ -71,8 +71,8 @@ class TestGemCommandsContentsCommand < Gem::TestCase
       @cmd.execute
     end
 
-    assert_match %r|lib/foo\.rb|, @ui.output
-    assert_match %r|Rakefile|, @ui.output
+    assert_match %r{lib/foo\.rb}, @ui.output
+    assert_match %r{Rakefile}, @ui.output
     assert_equal "", @ui.error
   end
 
@@ -86,14 +86,30 @@ class TestGemCommandsContentsCommand < Gem::TestCase
       @cmd.execute
     end
 
-    assert_match %r|lib/foo\.rb|, @ui.output
-    refute_match %r|Rakefile|, @ui.output
+    assert_match %r{lib/foo\.rb}, @ui.output
+    refute_match %r{Rakefile}, @ui.output
 
     assert_equal "", @ui.error
   end
 
   def test_execute_missing_single
     @cmd.options[:args] = %w[foo]
+
+    assert_raises Gem::MockGemUi::TermError do
+      use_ui @ui do
+        @cmd.execute
+      end
+    end
+
+    assert_match "Unable to find gem 'foo'", @ui.output
+    assert_empty @ui.error
+  end
+
+  def test_execute_missing_version
+    @cmd.options[:args] = %w[foo]
+    @cmd.options[:version] = Gem::Requirement.new '= 2'
+
+    gem 'foo', 1
 
     assert_raises Gem::MockGemUi::TermError do
       use_ui @ui do
@@ -130,9 +146,9 @@ class TestGemCommandsContentsCommand < Gem::TestCase
       @cmd.execute
     end
 
-    assert_match %r|lib/foo\.rb|, @ui.output
-    assert_match %r|lib/bar\.rb|, @ui.output
-    assert_match %r|Rakefile|, @ui.output
+    assert_match %r{lib/foo\.rb}, @ui.output
+    assert_match %r{lib/bar\.rb}, @ui.output
+    assert_match %r{Rakefile}, @ui.output
     assert_equal "", @ui.error
   end
 
@@ -141,6 +157,23 @@ class TestGemCommandsContentsCommand < Gem::TestCase
     @cmd.options[:show_install_dir] = true
 
     gem 'foo'
+
+    use_ui @ui do
+      @cmd.execute
+    end
+
+    expected = File.join @gemhome, 'gems', 'foo-2'
+
+    assert_equal "#{expected}\n", @ui.output
+    assert_equal "", @ui.error
+  end
+
+  def test_execute_show_install_dir_latest_version
+    @cmd.options[:args] = %w[foo]
+    @cmd.options[:show_install_dir] = true
+
+    gem 'foo', 1
+    gem 'foo', 2
 
     use_ui @ui do
       @cmd.execute

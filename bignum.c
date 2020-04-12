@@ -9,7 +9,7 @@
 
 **********************************************************************/
 
-#include "ruby/config.h"
+#include "ruby/3/config.h"
 
 #include <ctype.h>
 #include <float.h>
@@ -45,9 +45,6 @@
 
 #define RB_BIGNUM_TYPE_P(x) RB_TYPE_P((x), T_BIGNUM)
 
-#ifndef RUBY_INTEGER_UNIFICATION
-VALUE rb_cBignum;
-#endif
 const char ruby_digitmap[] = "0123456789abcdefghijklmnopqrstuvwxyz";
 
 #ifndef SIZEOF_BDIGIT_DBL
@@ -3021,18 +3018,19 @@ static VALUE
 bignew_1(VALUE klass, size_t len, int sign)
 {
     NEWOBJ_OF(big, struct RBignum, klass, T_BIGNUM | (RGENGC_WB_PROTECTED_BIGNUM ? FL_WB_PROTECTED : 0));
-    BIGNUM_SET_SIGN((VALUE)big, sign);
+    VALUE bigv = (VALUE)big;
+    BIGNUM_SET_SIGN(bigv, sign);
     if (len <= BIGNUM_EMBED_LEN_MAX) {
-        FL_SET_RAW(big, BIGNUM_EMBED_FLAG);
-	BIGNUM_SET_LEN((VALUE)big, len);
-        (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)RBIGNUM(big)->as.ary, sizeof(RBIGNUM(big)->as.ary));
+        FL_SET_RAW(bigv, BIGNUM_EMBED_FLAG);
+        BIGNUM_SET_LEN(bigv, len);
+        (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)big->as.ary, sizeof(big->as.ary));
     }
     else {
-	RBIGNUM(big)->as.heap.digits = ALLOC_N(BDIGIT, len);
-	RBIGNUM(big)->as.heap.len = len;
+        big->as.heap.digits = ALLOC_N(BDIGIT, len);
+        big->as.heap.len = len;
     }
-    OBJ_FREEZE(big);
-    return (VALUE)big;
+    OBJ_FREEZE(bigv);
+    return bigv;
 }
 
 VALUE
@@ -3409,7 +3407,7 @@ rb_absint_numwords(VALUE val, size_t word_numbits, size_t *nlz_bits_ret)
     size_t numbytes;
     int nlz_bits_in_msbyte;
     size_t numwords;
-    size_t nlz_bits;
+    size_t nlz_bits = 0;
 
     if (word_numbits == 0)
         return (size_t)-1;
@@ -4676,12 +4674,6 @@ static size_t base36_numdigits_cache[35][MAX_BASE36_POWER_TABLE_ENTRIES];
 static void
 power_cache_init(void)
 {
-    int i, j;
-    for (i = 0; i < 35; ++i) {
-	for (j = 0; j < MAX_BASE36_POWER_TABLE_ENTRIES; ++j) {
-	    base36_power_cache[i][j] = Qnil;
-	}
-    }
 }
 
 static inline VALUE
@@ -4704,8 +4696,8 @@ power_cache_get_power(int base, int power_level, size_t *numdigits_ret)
     if (MAX_BASE36_POWER_TABLE_ENTRIES <= power_level)
         rb_bug("too big power number requested: maxpow_in_bdigit_dbl(%d)**(2**%d)", base, power_level);
 
-    if (NIL_P(base36_power_cache[base - 2][power_level])) {
-        VALUE power;
+    VALUE power = base36_power_cache[base - 2][power_level];
+    if (!power) {
         size_t numdigits;
         if (power_level == 0) {
             int numdigits0;
@@ -4725,7 +4717,7 @@ power_cache_get_power(int base, int power_level, size_t *numdigits_ret)
     }
     if (numdigits_ret)
         *numdigits_ret = base36_numdigits_cache[base - 2][power_level];
-    return base36_power_cache[base - 2][power_level];
+    return power;
 }
 
 struct big2str_struct {
@@ -6287,7 +6279,7 @@ rb_big_pow(VALUE x, VALUE y)
 	yy = FIX2LONG(y);
 
         if (yy < 0) {
-            x = rb_big_pow(x, INT2NUM(-yy));
+            x = rb_big_pow(x, LONG2NUM(-yy));
             if (RB_INTEGER_TYPE_P(x))
                 return rb_rational_raw(INT2FIX(1), x);
             else
@@ -7196,9 +7188,6 @@ rb_int_powm(int const argc, VALUE * const argv, VALUE const num)
 void
 Init_Bignum(void)
 {
-#ifndef RUBY_INTEGER_UNIFICATION
-    rb_cBignum = rb_cInteger;
-#endif
     /* An obsolete class, use Integer */
     rb_define_const(rb_cObject, "Bignum", rb_cInteger);
     rb_deprecate_constant(rb_cObject, "Bignum");

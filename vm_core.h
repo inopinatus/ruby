@@ -46,7 +46,7 @@
 #define VMDEBUG 3
 #endif
 
-#include "ruby/config.h"
+#include "ruby/3/config.h"
 
 #include <stddef.h>
 #include <signal.h>
@@ -72,12 +72,12 @@
 
 #include <setjmp.h>
 
+#include "ruby/3/stdbool.h"
+#include "ccan/list/list.h"
 #include "id.h"
 #include "internal.h"
 #include "internal/array.h"
 #include "internal/serial.h"
-#include "internal/stdbool.h"
-#include "ccan/list/list.h"
 #include "internal/vm.h"
 #include "method.h"
 #include "node.h"
@@ -141,12 +141,13 @@
 
 #if defined(SIGSEGV) && defined(HAVE_SIGALTSTACK) && defined(SA_SIGINFO) && !defined(__NetBSD__)
 #  define USE_SIGALTSTACK
-void *rb_register_sigaltstack(void);
-#  define RB_ALTSTACK_INIT(var) var = rb_register_sigaltstack()
+void *rb_allocate_sigaltstack(void);
+void *rb_register_sigaltstack(void *);
+#  define RB_ALTSTACK_INIT(var, altstack) var = rb_register_sigaltstack(altstack)
 #  define RB_ALTSTACK_FREE(var) xfree(var)
 #  define RB_ALTSTACK(var)  var
 #else /* noop */
-#  define RB_ALTSTACK_INIT(var)
+#  define RB_ALTSTACK_INIT(var, altstack)
 #  define RB_ALTSTACK_FREE(var)
 #  define RB_ALTSTACK(var) (0)
 #endif
@@ -245,16 +246,6 @@ union iseq_inline_storage_entry {
     struct iseq_inline_iv_cache_entry iv_cache;
 };
 
-struct rb_call_info_kw_arg {
-    int keyword_len;
-    VALUE keywords[1];
-};
-
-struct rb_call_info_with_kwarg {
-    struct rb_call_info ci;
-    struct rb_call_info_kw_arg *kw_arg;
-};
-
 struct rb_calling_info {
     VALUE block_handler;
     VALUE recv;
@@ -262,13 +253,7 @@ struct rb_calling_info {
     int kw_splat;
 };
 
-struct rb_kwarg_call_data {
-    struct rb_call_cache cc;
-    struct rb_call_info_with_kwarg ci_kw;
-};
-
 struct rb_execution_context_struct;
-typedef VALUE (*vm_call_handler)(struct rb_execution_context_struct *ec, struct rb_control_frame_struct *cfp, struct rb_calling_info *calling, struct rb_call_data *cd);
 
 #if 1
 #define CoreDataFromValue(obj, type) (type*)DATA_PTR(obj)
@@ -426,12 +411,7 @@ struct rb_iseq_constant_body {
     struct rb_iseq_struct *local_iseq; /* local_iseq->flip_cnt can be modified */
 
     union iseq_inline_storage_entry *is_entries;
-    struct rb_call_data *call_data; /* A buffer for two arrays:
-                                     * struct rb_call_data calls[ci_size];
-                                     * struct rb_kwarg_call_data kw_calls[ci_kw_size];
-                                     * Such that:
-                                     * struct rb_kwarg_call_data *kw_calls = &body->call_data[ci_size];
-                                     */
+    struct rb_call_data *call_data; //struct rb_call_data calls[ci_size];
 
     struct {
 	rb_snum_t flip_count;
@@ -443,7 +423,6 @@ struct rb_iseq_constant_body {
     unsigned int local_table_size;
     unsigned int is_size;
     unsigned int ci_size;
-    unsigned int ci_kw_size;
     unsigned int stack_max; /* for stack overflow check */
 
     char catch_except_p; /* If a frame of this ISeq may catch exception, set TRUE */
@@ -848,7 +827,7 @@ typedef char rb_thread_id_string_t[sizeof(rb_nativethread_id_t) * 2 + 3];
 
 typedef struct rb_fiber_struct rb_fiber_t;
 
-typedef struct rb_execution_context_struct {
+struct rb_execution_context_struct {
     /* execution information */
     VALUE *vm_stack;		/* must free, must mark */
     size_t vm_stack_size;       /* size in word (byte size / sizeof(VALUE)) */
@@ -897,7 +876,12 @@ typedef struct rb_execution_context_struct {
 	size_t stack_maxsize;
 	RUBY_ALIGNAS(SIZEOF_VALUE) jmp_buf regs;
     } machine;
-} rb_execution_context_t;
+};
+
+#ifndef rb_execution_context_t
+typedef struct rb_execution_context_struct rb_execution_context_t;
+#define rb_execution_context_t rb_execution_context_t
+#endif
 
 // for builtin.h
 #define VM_CORE_H_EC_DEFINED 1
@@ -996,6 +980,10 @@ typedef struct rb_thread_struct {
     /* misc */
     VALUE name;
 
+#ifdef USE_SIGALTSTACK
+    void *altstack;
+#endif
+
 } rb_thread_t;
 
 typedef enum {
@@ -1090,35 +1078,6 @@ enum vm_check_match_type {
 #define VM_CHECKMATCH_TYPE_MASK   0x03
 #define VM_CHECKMATCH_ARRAY       0x04
 
-enum vm_call_flag_bits {
-    VM_CALL_ARGS_SPLAT_bit,     /* m(*args) */
-    VM_CALL_ARGS_BLOCKARG_bit,  /* m(&block) */
-    VM_CALL_FCALL_bit,          /* m(...) */
-    VM_CALL_VCALL_bit,          /* m */
-    VM_CALL_ARGS_SIMPLE_bit,    /* (ci->flag & (SPLAT|BLOCKARG)) && blockiseq == NULL && ci->kw_arg == NULL */
-    VM_CALL_BLOCKISEQ_bit,      /* has blockiseq */
-    VM_CALL_KWARG_bit,          /* has kwarg */
-    VM_CALL_KW_SPLAT_bit,       /* m(**opts) */
-    VM_CALL_TAILCALL_bit,       /* located at tail position */
-    VM_CALL_SUPER_bit,          /* super */
-    VM_CALL_ZSUPER_bit,         /* zsuper */
-    VM_CALL_OPT_SEND_bit,       /* internal flag */
-    VM_CALL__END
-};
-
-#define VM_CALL_ARGS_SPLAT      (0x01 << VM_CALL_ARGS_SPLAT_bit)
-#define VM_CALL_ARGS_BLOCKARG   (0x01 << VM_CALL_ARGS_BLOCKARG_bit)
-#define VM_CALL_FCALL           (0x01 << VM_CALL_FCALL_bit)
-#define VM_CALL_VCALL           (0x01 << VM_CALL_VCALL_bit)
-#define VM_CALL_ARGS_SIMPLE     (0x01 << VM_CALL_ARGS_SIMPLE_bit)
-#define VM_CALL_BLOCKISEQ       (0x01 << VM_CALL_BLOCKISEQ_bit)
-#define VM_CALL_KWARG           (0x01 << VM_CALL_KWARG_bit)
-#define VM_CALL_KW_SPLAT        (0x01 << VM_CALL_KW_SPLAT_bit)
-#define VM_CALL_TAILCALL        (0x01 << VM_CALL_TAILCALL_bit)
-#define VM_CALL_SUPER           (0x01 << VM_CALL_SUPER_bit)
-#define VM_CALL_ZSUPER          (0x01 << VM_CALL_ZSUPER_bit)
-#define VM_CALL_OPT_SEND        (0x01 << VM_CALL_OPT_SEND_bit)
-
 enum vm_special_object_type {
     VM_SPECIAL_OBJECT_VMCORE = 1,
     VM_SPECIAL_OBJECT_CBASE,
@@ -1137,8 +1096,8 @@ enum vm_svar_index {
 typedef struct iseq_inline_cache_entry *IC;
 typedef struct iseq_inline_iv_cache_entry *IVC;
 typedef union iseq_inline_storage_entry *ISE;
-typedef struct rb_call_info *CALL_INFO;
-typedef struct rb_call_cache *CALL_CACHE;
+typedef const struct rb_callinfo *CALL_INFO;
+typedef const struct rb_callcache *CALL_CACHE;
 typedef struct rb_call_data *CALL_DATA;
 
 typedef VALUE CDHASH;

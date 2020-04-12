@@ -3,10 +3,17 @@ require 'rbconfig'
 module JITSupport
   JIT_TIMEOUT = 600 # 10min for each...
   JIT_SUCCESS_PREFIX = 'JIT success \(\d+\.\dms\)'
+  JIT_RECOMPILE_PREFIX = 'JIT recompile'
   JIT_COMPACTION_PREFIX = 'JIT compaction \(\d+\.\dms\)'
   UNSUPPORTED_COMPILERS = [
-    %r[\A/opt/intel/.*/bin/intel64/icc\b],
+    %r[\A.*/bin/intel64/icc\b],
     %r[\A/opt/developerstudio\d+\.\d+/bin/cc\z],
+  ]
+  # freebsd12: cc1 internal failure https://rubyci.org/logs/rubyci.s3.amazonaws.com/freebsd12/ruby-master/log/20200306T103003Z.fail.html.gz
+  # rhel8: one or more PCH files were found, but they were invalid https://rubyci.org/logs/rubyci.s3.amazonaws.com/rhel8/ruby-master/log/20200306T153003Z.fail.html.gz
+  PENDING_RUBYCI_NICKNAMES = %w[
+    freebsd12
+    rhel8
   ]
 
   module_function
@@ -47,7 +54,7 @@ module JITSupport
     return @supported if defined?(@supported)
     @supported = UNSUPPORTED_COMPILERS.all? do |regexp|
       !regexp.match?(RbConfig::CONFIG['MJIT_CC'])
-    end && RbConfig::CONFIG["MJIT_SUPPORT"] != 'no'
+    end && RbConfig::CONFIG["MJIT_SUPPORT"] != 'no' && !PENDING_RUBYCI_NICKNAMES.include?(ENV['RUBYCI_NICKNAME'])
   end
 
   def remove_mjit_logs(stderr)

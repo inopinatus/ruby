@@ -465,6 +465,14 @@ class TestMethod < Test::Unit::TestCase
     c3.class_eval { alias bar foo }
     m3 = c3.new.method(:bar)
     assert_equal("#<Method: #{c3.inspect}(#{c.inspect})#bar(foo)() #{__FILE__}:#{line_no}>", m3.inspect, bug7806)
+
+    bug15608 = '[ruby-core:91570] [Bug #15608]'
+    c4 = Class.new(c)
+    c4.class_eval { alias bar foo }
+    o = c4.new
+    o.singleton_class
+    m4 = o.method(:bar)
+    assert_equal("#<Method: #{c4.inspect}(#{c.inspect})#bar(foo)() #{__FILE__}:#{line_no}>", m4.inspect, bug15608)
   end
 
   def test_callee_top_level
@@ -820,7 +828,7 @@ class TestMethod < Test::Unit::TestCase
     assert_equal(c, c.instance_method(:foo).owner)
     assert_equal(c, x.method(:foo).owner)
     assert_equal(x.singleton_class, x.method(:bar).owner)
-    assert_not_equal(x.method(:foo), x.method(:bar), bug7613)
+    assert_equal(x.method(:foo), x.method(:bar), bug7613)
     assert_equal(c, x.method(:zot).owner, bug7993)
     assert_equal(c, c.instance_method(:zot).owner, bug7993)
   end

@@ -9,7 +9,7 @@
 
 **********************************************************************/
 
-#include "ruby/config.h"
+#include "ruby/3/config.h"
 
 #include <assert.h>
 #include <ctype.h>
@@ -43,9 +43,6 @@
 /* use IEEE 64bit values if not defined */
 #ifndef FLT_RADIX
 #define FLT_RADIX 2
-#endif
-#ifndef FLT_ROUNDS
-#define FLT_ROUNDS 1
 #endif
 #ifndef DBL_MIN
 #define DBL_MIN 2.2250738585072014e-308
@@ -195,9 +192,6 @@ static ID id_coerce;
 VALUE rb_cNumeric;
 VALUE rb_cFloat;
 VALUE rb_cInteger;
-#ifndef RUBY_INTEGER_UNIFICATION
-VALUE rb_cFixnum;
-#endif
 
 VALUE rb_eZeroDivError;
 VALUE rb_eFloatDomainError;
@@ -912,7 +906,7 @@ rb_float_new_in_heap(double d)
     NEWOBJ_OF(flt, struct RFloat, rb_cFloat, T_FLOAT | (RGENGC_WB_PROTECTED_FLOAT ? FL_WB_PROTECTED : 0));
 
     flt->float_value = d;
-    OBJ_FREEZE(flt);
+    OBJ_FREEZE((VALUE)flt);
     return (VALUE)flt;
 }
 
@@ -1439,7 +1433,7 @@ flo_hash(VALUE num)
 static VALUE
 rb_dbl_hash(double d)
 {
-    return LONG2FIX(rb_dbl_long_hash(d));
+    return ST2FIX(rb_dbl_long_hash(d));
 }
 
 VALUE
@@ -2593,7 +2587,7 @@ ruby_num_interval_step_size(VALUE from, VALUE to, VALUE step, int excl)
 	double n = ruby_float_step_size(NUM2DBL(from), NUM2DBL(to), NUM2DBL(step), excl);
 
 	if (isinf(n)) return DBL2NUM(n);
-	if (POSFIXABLE(n)) return LONG2FIX(n);
+	if (POSFIXABLE(n)) return LONG2FIX((long)n);
 	return rb_dbl2big(n);
     }
     else {
@@ -2935,7 +2929,6 @@ rb_num2ulong(VALUE val)
     return rb_num2ulong_internal(val, NULL);
 }
 
-#if SIZEOF_INT < SIZEOF_LONG
 void
 rb_out_of_int(SIGNED_VALUE num)
 {
@@ -2943,6 +2936,7 @@ rb_out_of_int(SIGNED_VALUE num)
 	     num, num < 0 ? "small" : "big");
 }
 
+#if SIZEOF_INT < SIZEOF_LONG
 static void
 check_int(long num)
 {
@@ -3018,6 +3012,18 @@ long
 rb_fix2int(VALUE val)
 {
     return FIX2INT(val);
+}
+
+unsigned long
+rb_num2uint(VALUE val)
+{
+    return rb_num2ulong(val);
+}
+
+unsigned long
+rb_fix2uint(VALUE val)
+{
+    return RB_FIX2ULONG(val);
 }
 #endif
 
@@ -4073,10 +4079,7 @@ fix_pow(VALUE x, VALUE y)
 
 	if (b == 0) return INT2FIX(1);
 	if (b == 1) return x;
-	if (a == 0) {
-	    if (b > 0) return INT2FIX(0);
-	    return DBL2NUM(HUGE_VAL);
-	}
+	if (a == 0) return INT2FIX(0);
 	return int_pow(a, b);
     }
     else if (RB_TYPE_P(y, T_BIGNUM)) {
@@ -4141,6 +4144,8 @@ rb_num_pow(VALUE x, VALUE y)
         return rb_complex_pow(x, y);
       case T_RATIONAL:
         return rb_rational_pow(x, y);
+      default:
+        break;
     }
     return Qnil;
 }
@@ -5690,9 +5695,6 @@ Init_Numeric(void)
     rb_define_method(rb_cInteger, "bit_length", rb_int_bit_length, 0);
     rb_define_method(rb_cInteger, "digits", rb_int_digits, -1);
 
-#ifndef RUBY_INTEGER_UNIFICATION
-    rb_cFixnum = rb_cInteger;
-#endif
     /* An obsolete class, use Integer */
     rb_define_const(rb_cObject, "Fixnum", rb_cInteger);
     rb_deprecate_constant(rb_cObject, "Fixnum");
@@ -5702,23 +5704,6 @@ Init_Numeric(void)
     rb_undef_alloc_func(rb_cFloat);
     rb_undef_method(CLASS_OF(rb_cFloat), "new");
 
-    /*
-     *  Deprecated, do not use.
-     *
-     *  Represents the rounding mode for floating point addition at the start time.
-     *
-     *  Usually defaults to 1, rounding to the nearest number.
-     *
-     *  Other modes include:
-     *
-     *  -1::	Indeterminable
-     *	0::	Rounding towards zero
-     *	1::	Rounding to the nearest number
-     *	2::	Rounding towards positive infinity
-     *	3::	Rounding towards negative infinity
-     */
-    rb_define_const(rb_cFloat, "ROUNDS", INT2FIX(FLT_ROUNDS));
-    rb_deprecate_constant(rb_cFloat, "ROUNDS");
     /*
      *	The base of the floating point, or number of unique digits used to
      *	represent the number.

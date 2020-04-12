@@ -499,7 +499,7 @@ PeIQQkFng2VVot/WAQbv3ePqWq07g1BBcwIBAg==
       fetcher.fetch_path url
     end
 
-    assert_match %r|ECONNREFUSED:.*connect\(2\) \(#{Regexp.escape url}\)\z|,
+    assert_match %r{ECONNREFUSED:.*connect\(2\) \(#{Regexp.escape url}\)\z},
                  e.message
     assert_equal url, e.uri
   end
@@ -897,8 +897,6 @@ PeIQQkFng2VVot/WAQbv3ePqWq07g1BBcwIBAg==
   end
 
   def test_ssl_client_cert_auth_connection
-    skip 'openssl in jruby fails' if java_platform?
-
     ssl_server = self.class.start_ssl_server({
       :SSLVerifyClient =>
         OpenSSL::SSL::VERIFY_PEER | OpenSSL::SSL::VERIFY_FAIL_IF_NO_PEER_CERT})
@@ -1045,7 +1043,7 @@ PeIQQkFng2VVot/WAQbv3ePqWq07g1BBcwIBAg==
         @ssl_server_thread.kill.join
         @ssl_server_thread = nil
       end
-      utils = WEBrick::Utils    # TimeoutHandler is since 1.9
+      utils = WEBrick::Utils # TimeoutHandler is since 1.9
       utils::TimeoutHandler.terminate if defined?(utils::TimeoutHandler.terminate)
     end
 

@@ -30,6 +30,7 @@
 #include "ruby/st.h"
 #include "ruby/vm.h"
 #include "vm_core.h"
+#include "vm_callinfo.h"
 #include "vm_debug.h"
 #include "vm_exec.h"
 #include "vm_insnhelper.h"
@@ -156,7 +157,7 @@ VM_EP_IN_HEAP_P(const rb_execution_context_t *ec, const VALUE *ep)
     }
 }
 
-int
+static int
 vm_ep_in_heap_p_(const rb_execution_context_t *ec, const VALUE *ep)
 {
     if (VM_EP_IN_HEAP_P(ec, ep)) {
@@ -384,6 +385,8 @@ unsigned int    ruby_vm_event_local_num;
 rb_serial_t ruby_vm_global_method_state = 1;
 rb_serial_t ruby_vm_global_constant_state = 1;
 rb_serial_t ruby_vm_class_serial = 1;
+
+const struct rb_callcache *vm_empty_cc;
 
 static void thread_free(void *ptr);
 
@@ -1220,9 +1223,16 @@ invoke_block_from_c_proc(rb_execution_context_t *ec, const rb_proc_t *proc,
       case block_type_iseq:
         return invoke_iseq_block_from_c(ec, &block->as.captured, self, argc, argv, kw_splat, passed_block_handler, NULL, is_lambda, me);
       case block_type_ifunc:
-        if (kw_splat == 1 && RHASH_EMPTY_P(argv[argc-1])) {
-            argc--;
-            kw_splat = 2;
+        if (kw_splat == 1) {
+            VALUE keyword_hash = argv[argc-1];
+            if (!RB_TYPE_P(keyword_hash, T_HASH)) {
+                keyword_hash = rb_to_hash_type(keyword_hash);
+            }
+            if (RHASH_EMPTY_P(keyword_hash)) {
+                argc--;
+            } else {
+                ((VALUE *)argv)[argc-1] = rb_hash_dup(keyword_hash);
+            }
         }
         return vm_yield_with_cfunc(ec, &block->as.captured, self, argc, argv, kw_splat, passed_block_handler, me);
       case block_type_symbol:
@@ -1757,7 +1767,7 @@ static void
 hook_before_rewind(rb_execution_context_t *ec, const rb_control_frame_t *cfp,
                    int will_finish_vm_exec, int state, struct vm_throw_data *err)
 {
-    if (state == TAG_RAISE && RBASIC_CLASS(err) == rb_eSysStackError) {
+    if (state == TAG_RAISE && RBASIC(err)->klass == rb_eSysStackError) {
 	return;
     }
     else {
@@ -2805,8 +2815,9 @@ static VALUE
 m_core_undef_method(VALUE self, VALUE cbase, VALUE sym)
 {
     REWIND_CFP({
-	rb_undef(cbase, SYM2ID(sym));
-	rb_clear_method_cache_by_class(self);
+        ID mid = SYM2ID(sym);
+	rb_undef(cbase, mid);
+	rb_clear_method_cache(self, mid);
     });
     return Qnil;
 }
@@ -2959,6 +2970,20 @@ static VALUE
 f_lambda(VALUE _)
 {
     return rb_block_lambda();
+}
+
+static VALUE
+vm_mtbl(VALUE self, VALUE obj, VALUE sym)
+{
+    vm_mtbl_dump(CLASS_OF(obj), RTEST(sym) ? SYM2ID(sym) : 0);
+    return Qnil;
+}
+
+static VALUE
+vm_mtbl2(VALUE self, VALUE obj, VALUE sym)
+{
+    vm_mtbl_dump(obj, RTEST(sym) ? SYM2ID(sym) : 0);
+    return Qnil;
 }
 
 void
@@ -3248,9 +3273,14 @@ Init_VM(void)
 #if VMDEBUG
     rb_define_singleton_method(rb_cRubyVM, "SDR", sdr, 0);
     rb_define_singleton_method(rb_cRubyVM, "NSDR", nsdr, 0);
+    rb_define_singleton_method(rb_cRubyVM, "mtbl", vm_mtbl, 2);
+    rb_define_singleton_method(rb_cRubyVM, "mtbl", vm_mtbl, 2);
+    rb_define_singleton_method(rb_cRubyVM, "mtbl2", vm_mtbl2, 2);
 #else
     (void)sdr;
     (void)nsdr;
+    (void)vm_mtbl;
+    (void)vm_mtbl2;
 #endif
 
     /* VM bootstrap: phase 2 */
@@ -3347,6 +3377,10 @@ Init_vm_objects(void)
     vm->frozen_strings = st_init_table_with_size(&rb_fstring_hash_type, 10000);
 
     rb_objspace_gc_enable(vm->objspace);
+
+    vm_empty_cc = vm_cc_new(0, NULL, vm_call_general);
+    FL_SET_RAW((VALUE)vm_empty_cc, VM_CALLCACHE_UNMARKABLE);
+    rb_gc_register_mark_object((VALUE)vm_empty_cc);
 }
 
 /* top self */
@@ -3714,6 +3748,12 @@ vm_collect_usage_register(int reg, int isset)
 	(*ruby_vm_collect_usage_func_register)(reg, isset);
 }
 #endif
+
+MJIT_FUNC_EXPORTED const struct rb_callcache *
+rb_vm_empty_cc(void)
+{
+    return vm_empty_cc;
+}
 
 #endif /* #ifndef MJIT_HEADER */
 

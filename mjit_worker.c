@@ -10,6 +10,19 @@
 // call Ruby methods (C functions that may call rb_funcall) or trigger
 // GC (using ZALLOC, xmalloc, xfree, etc.) in this file.
 
+/* However, note that calling `free` for resources `xmalloc`-ed in mjit.c,
+   which is currently done in some places, is sometimes problematic in the
+   following situations:
+
+   * malloc library could be different between interpreter and extensions
+     on Windows (perhaps not applicable to MJIT because CC is the same)
+   * xmalloc -> free leaks extra space used for USE_GC_MALLOC_OBJ_INFO_DETAILS
+     (not enabled by default)
+
+   ...in short, it's usually not a problem in MJIT. But maybe it's worth
+   fixing for consistency or for USE_GC_MALLOC_OBJ_INFO_DETAILS support.
+*/
+
 /* We utilize widely used C compilers (GCC and LLVM Clang) to
    implement MJIT.  We feed them a C code generated from ISEQ.  The
    industrial C compilers are slower than regular JIT engines.
@@ -73,11 +86,13 @@
 #endif
 
 #include "vm_core.h"
+#include "vm_callinfo.h"
 #include "mjit.h"
 #include "gc.h"
 #include "ruby_assert.h"
 #include "ruby/debug.h"
 #include "ruby/thread.h"
+#include "ruby/version.h"
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -146,6 +161,9 @@ struct rb_mjit_unit {
     struct list_node unode;
     // mjit_compile's optimization switches
     struct rb_mjit_compile_info compile_info;
+    // captured CC values, they should be marked with iseq.
+    const struct rb_callcache **cc_entries;
+    unsigned int cc_entries_size; // iseq->body->ci_size + ones of inlined iseqs
 };
 
 // Linked list of struct rb_mjit_unit.
@@ -412,6 +430,10 @@ free_unit(struct rb_mjit_unit *unit)
         unit->iseq->body->jit_func = (mjit_func_t)NOT_COMPILED_JIT_ISEQ_FUNC;
         unit->iseq->body->jit_unit = NULL;
     }
+    if (unit->cc_entries) {
+        void *entries = (void *)unit->cc_entries;
+        free(entries);
+    }
     if (unit->handle && dlclose(unit->handle)) { // handle is NULL if it's in queue
         mjit_warning("failed to close handle for u%d: %s", unit->id, dlerror());
     }
@@ -546,7 +568,7 @@ form_args(int num, ...)
 }
 
 COMPILER_WARNING_PUSH
-#ifdef __GNUC__
+#if __has_warning("-Wdeprecated-declarations") || RUBY3_COMPILER_IS(GCC)
 COMPILER_WARNING_IGNORED(-Wdeprecated-declarations)
 #endif
 // Start an OS process of absolute executable path with arguments `argv`.
@@ -665,6 +687,40 @@ remove_so_file(const char *so_file, struct rb_mjit_unit *unit)
 #else
     remove_file(so_file);
 #endif
+}
+
+// Print _mjitX, but make a human-readable funcname when --jit-debug is used
+static void
+sprint_funcname(char *funcname, const struct rb_mjit_unit *unit)
+{
+    const rb_iseq_t *iseq = unit->iseq;
+    if (iseq == NULL || (!mjit_opts.debug && !mjit_opts.debug_flags)) {
+        sprintf(funcname, "_mjit%d", unit->id);
+        return;
+    }
+
+    // Generate a short path
+    const char *path = RSTRING_PTR(rb_iseq_path(iseq));
+    const char *lib = "/lib/";
+    const char *version = "/" STRINGIZE(RUBY_API_VERSION_MAJOR) "." STRINGIZE(RUBY_API_VERSION_MINOR) "." STRINGIZE(RUBY_API_VERSION_TEENY) "/";
+    while (strstr(path, lib)) // skip "/lib/"
+        path = strstr(path, lib) + strlen(lib);
+    while (strstr(path, version)) // skip "/x.y.z/"
+        path = strstr(path, version) + strlen(version);
+
+    // Annotate all-normalized method names
+    const char *method = RSTRING_PTR(iseq->body->location.label);
+    if (!strcmp(method, "[]")) method = "AREF";
+    if (!strcmp(method, "[]=")) method = "ASET";
+
+    // Print and normalize
+    sprintf(funcname, "_mjit%d_%s_%s", unit->id, path, method);
+    for (size_t i = 0; i < strlen(funcname); i++) {
+        char c = funcname[i];
+        if (!(('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || ('0' <= c && c <= '9') || c == '_')) {
+            funcname[i] = '_';
+        }
+    }
 }
 
 #define append_str2(p, str, len) ((char *)memcpy((p), str, (len))+(len))
@@ -891,8 +947,8 @@ compact_all_jit_code(void)
         CRITICAL_SECTION_START(3, "in compact_all_jit_code to read list");
         list_for_each(&active_units.head, cur, unode) {
             void *func;
-            char funcname[35]; // TODO: reconsider `35`
-            sprintf(funcname, "_mjit%d", cur->id);
+            char funcname[MAXPATHLEN];
+            sprint_funcname(funcname, cur);
 
             if ((func = dlsym(handle, funcname)) == NULL) {
                 mjit_warning("skipping to reload '%s' from '%s': %s", funcname, so_file, dlerror());
@@ -980,7 +1036,7 @@ compile_prelude(FILE *f)
 static mjit_func_t
 convert_unit_to_func(struct rb_mjit_unit *unit)
 {
-    char c_file_buff[MAXPATHLEN], *c_file = c_file_buff, *so_file, funcname[35]; // TODO: reconsider `35`
+    char c_file_buff[MAXPATHLEN], *c_file = c_file_buff, *so_file, funcname[MAXPATHLEN];
     int fd;
     FILE *f;
     void *func;
@@ -1015,7 +1071,7 @@ convert_unit_to_func(struct rb_mjit_unit *unit)
     memcpy(so_file, c_file, c_file_len - sizeof(c_ext));
     memcpy(&so_file[c_file_len - sizeof(c_ext)], so_ext, sizeof(so_ext));
 
-    sprintf(funcname, "_mjit%d", unit->id);
+    sprint_funcname(funcname, unit);
 
     fd = rb_cloexec_open(c_file, access_mode, 0600);
     if (fd < 0 || (f = fdopen(fd, "w")) == NULL) {
@@ -1117,7 +1173,6 @@ convert_unit_to_func(struct rb_mjit_unit *unit)
 
 typedef struct {
     const rb_iseq_t *iseq;
-    struct rb_call_cache *cc_entries;
     union iseq_inline_storage_entry *is_entries;
     bool finish_p;
 } mjit_copy_job_t;
@@ -1131,6 +1186,52 @@ static void mjit_copy_job_handler(void *data);
 // vm_trace.c
 int rb_workqueue_register(unsigned flags, rb_postponed_job_func_t , void *);
 
+// To see cc_entries using index returned by `mjit_capture_cc_entries` in mjit_compile.c
+const struct rb_callcache **
+mjit_iseq_cc_entries(const struct rb_iseq_constant_body *const body)
+{
+    return body->jit_unit->cc_entries;
+}
+
+// Capture cc entries of `captured_iseq` and append them to `compiled_iseq->jit_unit->cc_entries`.
+// This is needed when `captured_iseq` is inlined by `compiled_iseq` and GC needs to mark inlined cc.
+//
+// Index to refer to `compiled_iseq->jit_unit->cc_entries` is returned instead of the address
+// because old addresses may be invalidated by `realloc` later. -1 is returned on failure.
+//
+// This assumes that it's safe to reference cc without acquiring GVL.
+int
+mjit_capture_cc_entries(const struct rb_iseq_constant_body *compiled_iseq, const struct rb_iseq_constant_body *captured_iseq)
+{
+    struct rb_mjit_unit *unit = compiled_iseq->jit_unit;
+    unsigned int new_entries_size = unit->cc_entries_size + captured_iseq->ci_size;
+    VM_ASSERT(captured_iseq->ci_size > 0);
+
+    // Allocate new cc_entries and append them to unit->cc_entries
+    const struct rb_callcache **cc_entries;
+    int cc_entries_index = unit->cc_entries_size;
+    if (unit->cc_entries_size == 0) {
+        VM_ASSERT(unit->cc_entries == NULL);
+        unit->cc_entries = cc_entries = malloc(sizeof(struct rb_callcache *) * new_entries_size);
+        if (cc_entries == NULL) return -1;
+    }
+    else {
+        void *cc_ptr = (void *)unit->cc_entries; // get rid of bogus warning by VC
+        cc_entries = realloc(cc_ptr, sizeof(struct rb_callcache *) * new_entries_size);
+        if (cc_entries == NULL) return -1;
+        unit->cc_entries = cc_entries;
+        cc_entries += cc_entries_index;
+    }
+    unit->cc_entries_size = new_entries_size;
+
+    // Capture cc to cc_enties
+    for (unsigned int i = 0; i < captured_iseq->ci_size; i++) {
+        cc_entries[i] = captured_iseq->call_data[i].cc;
+    }
+
+    return cc_entries_index;
+}
+
 // Copy inline cache values of `iseq` to `cc_entries` and `is_entries`.
 // These buffers should be pre-allocated properly prior to calling this function.
 // Return true if copy succeeds or is not needed.
@@ -1138,7 +1239,7 @@ int rb_workqueue_register(unsigned flags, rb_postponed_job_func_t , void *);
 // We're lazily copying cache values from main thread because these cache values
 // could be different between ones on enqueue timing and ones on dequeue timing.
 bool
-mjit_copy_cache_from_main_thread(const rb_iseq_t *iseq, struct rb_call_cache *cc_entries, union iseq_inline_storage_entry *is_entries)
+mjit_copy_cache_from_main_thread(const rb_iseq_t *iseq, union iseq_inline_storage_entry *is_entries)
 {
     mjit_copy_job_t *job = &mjit_copy_job; // just a short hand
 
@@ -1146,7 +1247,6 @@ mjit_copy_cache_from_main_thread(const rb_iseq_t *iseq, struct rb_call_cache *cc
     job->finish_p = true; // disable dispatching this job in mjit_copy_job_handler while it's being modified
     CRITICAL_SECTION_FINISH(3, "in mjit_copy_cache_from_main_thread");
 
-    job->cc_entries = cc_entries;
     job->is_entries = is_entries;
 
     CRITICAL_SECTION_START(3, "in mjit_copy_cache_from_main_thread");
@@ -1180,7 +1280,7 @@ mjit_copy_cache_from_main_thread(const rb_iseq_t *iseq, struct rb_call_cache *cc
     job->finish_p = true;
 
     in_jit = true; // Prohibit GC during JIT compilation
-    if (job->iseq == NULL) // ISeq GC is notified in mjit_mark_iseq
+    if (job->iseq == NULL) // ISeq GC is notified in mjit_free_iseq
         success_p = false;
     job->iseq = NULL; // Allow future GC of this ISeq from here
     CRITICAL_SECTION_FINISH(3, "in mjit_copy_cache_from_main_thread");

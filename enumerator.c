@@ -12,7 +12,7 @@
 
 ************************************************/
 
-#include "ruby/config.h"
+#include "ruby/3/config.h"
 
 #ifdef HAVE_FLOAT_H
 #include <float.h>
@@ -722,9 +722,9 @@ enumerator_with_object_i(RB_BLOCK_CALL_FUNC_ARGLIST(val, memo))
  *     puts "#{string}: #{x}"
  *   end
  *
- *   # => foo:0
- *   # => foo:1
- *   # => foo:2
+ *   # => foo: 0
+ *   # => foo: 1
+ *   # => foo: 2
  */
 static VALUE
 enumerator_with_object(VALUE obj, VALUE memo)
@@ -3841,7 +3841,7 @@ arith_seq_size(VALUE self)
 
         n = ruby_float_step_size(NUM2DBL(b), ee, NUM2DBL(s), x);
         if (isinf(n)) return DBL2NUM(n);
-        if (POSFIXABLE(n)) return LONG2FIX(n);
+        if (POSFIXABLE(n)) return LONG2FIX((long)n);
         return rb_dbl2big(n);
     }
 

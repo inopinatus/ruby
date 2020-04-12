@@ -2568,11 +2568,13 @@ class TestIO < Test::Unit::TestCase
   end
 
   def test_print_separators
-    EnvUtil.suppress_warning {$, = ':'}
-    $\ = "\n"
+    EnvUtil.suppress_warning {
+      $, = ':'
+      $\ = "\n"
+    }
     pipe(proc do |w|
       w.print('a')
-      w.print('a','b','c')
+      EnvUtil.suppress_warning {w.print('a','b','c')}
       w.close
     end, proc do |r|
       assert_equal("a\n", r.gets)
@@ -3628,15 +3630,27 @@ __END__
   end
 
   def test_open_flag_binary
+    binary_enc = Encoding.find("BINARY")
     make_tempfile do |t|
       open(t.path, File::RDONLY, flags: File::BINARY) do |f|
         assert_equal true, f.binmode?
+        assert_equal binary_enc, f.external_encoding
       end
       open(t.path, 'r', flags: File::BINARY) do |f|
         assert_equal true, f.binmode?
+        assert_equal binary_enc, f.external_encoding
       end
       open(t.path, mode: 'r', flags: File::BINARY) do |f|
         assert_equal true, f.binmode?
+        assert_equal binary_enc, f.external_encoding
+      end
+      open(t.path, File::RDONLY|File::BINARY) do |f|
+        assert_equal true, f.binmode?
+        assert_equal binary_enc, f.external_encoding
+      end
+      open(t.path, File::RDONLY|File::BINARY, autoclose: true) do |f|
+        assert_equal true, f.binmode?
+        assert_equal binary_enc, f.external_encoding
       end
     end
   end if File::BINARY != 0
@@ -3937,5 +3951,23 @@ __END__
       assert_raise(TypeError) {Marshal.dump(r)}
       assert_raise(TypeError) {Marshal.dump(w)}
     }
+  end
+
+  def test_stdout_to_closed_pipe
+    EnvUtil.invoke_ruby(["-e", "loop {puts :ok}"], "", true, true) do
+      |in_p, out_p, err_p, pid|
+      out = out_p.gets
+      out_p.close
+      err = err_p.read
+    ensure
+      status = Process.wait2(pid)[1]
+      assert_equal("ok\n", out)
+      assert_empty(err)
+      assert_not_predicate(status, :success?)
+      if Signal.list["PIPE"]
+        assert_predicate(status, :signaled?)
+        assert_equal("PIPE", Signal.signame(status.termsig) || status.termsig)
+      end
+    end
   end
 end

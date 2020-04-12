@@ -93,6 +93,17 @@ class TestSyntax < Test::Unit::TestCase
     assert_valid_syntax("tap (proc do end)", __FILE__, bug9726)
   end
 
+  def test_hash_kwsplat_hash
+    kw = {}
+    h = {a: 1}
+    assert_equal({}, {**{}})
+    assert_equal({}, {**kw})
+    assert_equal(h, {**h})
+    assert_equal(false, {**{}}.frozen?)
+    assert_equal(false, {**kw}.equal?(kw))
+    assert_equal(false, {**h}.equal?(h))
+  end
+
   def test_array_kwsplat_hash
     kw = {}
     h = {a: 1}
@@ -1403,6 +1414,13 @@ eom
     assert_equal(line, e.backtrace_locations[0].lineno)
   end
 
+  def test_methoddef_endless
+    assert_valid_syntax('private def foo = 42')
+    assert_valid_syntax('private def inc(x) = x + 1')
+    assert_valid_syntax('private def obj.foo = 42')
+    assert_valid_syntax('private def obj.inc(x) = x + 1')
+  end
+
   def test_methoddef_in_cond
     assert_valid_syntax('while def foo; tap do end; end; break; end')
     assert_valid_syntax('while def foo a = tap do end; end; break; end')
@@ -1546,6 +1564,14 @@ eom
       assert_equal(:rest, parameters.dig(0, 0))
       assert_equal(:block, parameters.dig(1, 0))
     end
+  end
+
+  def test_rightward_assign
+    assert_equal(1, eval("1 => a"))
+    assert_equal([2,3], eval("13.divmod(5) => a,b; [a, b]"))
+    assert_equal([2,3,2,3], eval("13.divmod(5) => a,b => c, d; [a, b, c, d]"))
+    assert_equal([2,3], eval("13.divmod(5)\n => a,b; [a, b]"))
+    assert_equal(3, eval("1+2 => a"))
   end
 
   private

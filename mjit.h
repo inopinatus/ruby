@@ -9,7 +9,7 @@
 #ifndef RUBY_MJIT_H
 #define RUBY_MJIT_H 1
 
-#include "ruby/config.h"
+#include "ruby/3/config.h"
 
 #if USE_MJIT
 
@@ -62,8 +62,10 @@ struct mjit_options {
 
 // State of optimization switches
 struct rb_mjit_compile_info {
-    // Disable getinstancevariable/setinstancevariable optimizations based on inline cache
+    // Disable getinstancevariable/setinstancevariable optimizations based on inline cache (T_OBJECT)
     bool disable_ivar_cache;
+    // Disable getinstancevariable/setinstancevariable optimizations based on inline cache (FL_EXIVAR)
+    bool disable_exivar_cache;
     // Disable send/opt_send_without_block optimizations based on inline cache
     bool disable_send_cache;
     // Disable method inlining
@@ -93,6 +95,7 @@ extern struct mjit_cont *mjit_cont_new(rb_execution_context_t *ec);
 extern void mjit_cont_free(struct mjit_cont *cont);
 extern void mjit_add_class_serial(rb_serial_t class_serial);
 extern void mjit_remove_class_serial(rb_serial_t class_serial);
+extern void mjit_mark_cc_entries(const struct rb_iseq_constant_body *const body);
 
 // A threshold used to reject long iseqs from JITting as such iseqs
 // takes too much time to be compiled.
@@ -125,17 +128,18 @@ mjit_exec(rb_execution_context_t *ec)
     total_calls = ++body->total_calls;
 
     func = body->jit_func;
-    if (UNLIKELY((uintptr_t)func <= (uintptr_t)LAST_JIT_ISEQ_FUNC)) {
+    uintptr_t func_i = (uintptr_t)func;
+    if (UNLIKELY(func_i <= LAST_JIT_ISEQ_FUNC)) {
 #     ifdef MJIT_HEADER
         RB_DEBUG_COUNTER_INC(mjit_frame_JT2VM);
 #     else
         RB_DEBUG_COUNTER_INC(mjit_frame_VM2VM);
 #     endif
-        switch ((enum rb_mjit_iseq_func)func) {
+        ASSUME(func_i <= LAST_JIT_ISEQ_FUNC);
+        switch ((enum rb_mjit_iseq_func)func_i) {
           case NOT_ADDED_JIT_ISEQ_FUNC:
             RB_DEBUG_COUNTER_INC(mjit_exec_not_added);
             if (total_calls == mjit_opts.min_calls && mjit_target_iseq_p(body)) {
-                RB_DEBUG_COUNTER_INC(mjit_exec_not_added_add_iseq);
                 rb_mjit_add_iseq_to_process(iseq);
                 if (UNLIKELY(mjit_opts.wait)) {
                     return rb_mjit_wait_call(ec, body);

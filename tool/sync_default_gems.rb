@@ -9,7 +9,6 @@
 # $ ruby tool/sync_default_gems.rb rubygems 97e9768612..9e53702832
 #
 # * https://github.com/rubygems/rubygems
-# * https://github.com/rubygems/bundler
 # * https://github.com/ruby/rdoc
 # * https://github.com/ruby/reline
 # * https://github.com/flori/json
@@ -60,6 +59,9 @@
 # * https://github.com/ruby/tmpdir
 # * https://github.com/ruby/English
 # * https://github.com/ruby/net-protocol
+# * https://github.com/ruby/net-imap
+# * https://github.com/ruby/net-ftp
+# * https://github.com/ruby/net-http
 #
 
 require 'fileutils'
@@ -67,7 +69,7 @@ include FileUtils
 
 $repositories = {
   rubygems: 'rubygems/rubygems',
-  bundler: 'rubygems/bundler',
+  bundler: 'rubygems/rubygems',
   rdoc: 'ruby/rdoc',
   reline: 'ruby/reline',
   json: 'flori/json',
@@ -118,6 +120,9 @@ $repositories = {
   tmpdir: "ruby/tmpdir",
   English: "ruby/English",
   "net-protocol": "ruby/net-protocol",
+  "net-imap": "ruby/net-imap",
+  "net-ftp": "ruby/net-ftp",
+  "net-http": "ruby/net-http",
 }
 
 def sync_default_gems(gem)
@@ -132,11 +137,11 @@ def sync_default_gems(gem)
     cp_r("#{upstream}/test/rubygems", "test")
   when "bundler"
     rm_rf(%w[lib/bundler* libexec/bundler libexec/bundle spec/bundler man/bundle* man/gemfile*])
-    cp_r(Dir.glob("#{upstream}/lib/bundler*"), "lib")
-    cp_r(Dir.glob("#{upstream}/exe/bundle*"), "libexec")
-    cp_r("#{upstream}/bundler.gemspec", "lib/bundler")
-    cp_r("#{upstream}/spec", "spec/bundler")
-    cp_r(Dir.glob("#{upstream}/man/*.{1,5,1\.txt,5\.txt,ronn}"), "man")
+    cp_r(Dir.glob("#{upstream}/bundler/lib/bundler*"), "lib")
+    cp_r(Dir.glob("#{upstream}/bundler/exe/bundle*"), "libexec")
+    cp_r("#{upstream}/bundler/bundler.gemspec", "lib/bundler")
+    cp_r("#{upstream}/bundler/spec", "spec/bundler")
+    cp_r(Dir.glob("#{upstream}/bundler/man/*.{1,5,1\.txt,5\.txt,ronn}"), "man")
     rm_rf(%w[spec/bundler/support/artifice/vcr_cassettes])
   when "rdoc"
     rm_rf(%w[lib/rdoc* test/rdoc libexec/rdoc libexec/ri])
@@ -262,23 +267,48 @@ def sync_default_gems(gem)
   when "openssl"
     rm_rf(%w[ext/openssl test/openssl])
     cp_r("#{upstream}/ext/openssl", "ext")
-    mkdir_p("ext/openssl/lib")
-    cp_r("#{upstream}/lib/openssl", "ext/openssl/lib")
-    cp_r("#{upstream}/lib/openssl.rb", "ext/openssl/lib")
-    cp_r("#{upstream}/test", "test/openssl")
+    cp_r("#{upstream}/lib", "ext/openssl")
+    cp_r("#{upstream}/test/openssl", "test")
     rm_rf("test/openssl/envutil.rb")
     cp_r("#{upstream}/openssl.gemspec", "ext/openssl")
-    cp_r("#{upstream}/HISTORY.md", "ext/openssl")
+    cp_r("#{upstream}/History.md", "ext/openssl")
     `git checkout ext/openssl/depend`
   when "net-pop"
-    sync_lib "net-pop"
-    mv "lib/net-pop.gemspec", "lib/net/pop"
+    rm_rf(%w[lib/net/pop.rb lib/net/pop test/net/pop])
+    cp_r("#{upstream}/lib/net/pop.rb", "lib/net")
+    cp_r("#{upstream}/lib/net/pop", "lib/net")
+    cp_r("#{upstream}/test/net/pop", "test/net")
+    cp_r("#{upstream}/net-pop.gemspec", "lib/net/pop")
   when "net-smtp"
-    sync_lib "net-smtp"
-    mv "lib/net-smtp.gemspec", "lib/net/smtp"
+    rm_rf(%w[lib/net/smtp.rb lib/net/smtp test/net/smtp])
+    cp_r("#{upstream}/lib/net/smtp.rb", "lib/net")
+    cp_r("#{upstream}/lib/net/smtp", "lib/net")
+    cp_r("#{upstream}/test/net/smtp", "test/net")
+    cp_r("#{upstream}/net-smtp.gemspec", "lib/net/smtp")
   when "net-protocol"
-    sync_lib "net-protocol"
-    mv "lib/net-protocol.gemspec", "lib/net/protocol"
+    rm_rf(%w[lib/net/protocol.rb lib/net/protocol test/net/protocol])
+    cp_r("#{upstream}/lib/net/protocol.rb", "lib/net")
+    cp_r("#{upstream}/lib/net/protocol", "lib/net")
+    cp_r("#{upstream}/test/net/protocol", "test/net")
+    cp_r("#{upstream}/net-protocol.gemspec", "lib/net/protocol")
+  when "net-imap"
+    rm_rf(%w[lib/net/imap.rb lib/net/imap test/net/imap])
+    cp_r("#{upstream}/lib/net/imap.rb", "lib/net")
+    cp_r("#{upstream}/lib/net/imap", "lib/net")
+    cp_r("#{upstream}/test/net/imap", "test/net")
+    cp_r("#{upstream}/net-imap.gemspec", "lib/net/imap")
+  when "net-ftp"
+    rm_rf(%w[lib/net/ftp.rb lib/net/ftp test/net/ftp])
+    cp_r("#{upstream}/lib/net/ftp.rb", "lib/net")
+    cp_r("#{upstream}/lib/net/ftp", "lib/net")
+    cp_r("#{upstream}/test/net/ftp", "test/net")
+    cp_r("#{upstream}/net-ftp.gemspec", "lib/net/ftp")
+  when "net-http"
+    rm_rf(%w[lib/net/http.rb lib/net/http test/net/http])
+    cp_r("#{upstream}/lib/net/http.rb", "lib/net")
+    cp_r("#{upstream}/lib/net/http", "lib/net")
+    cp_r("#{upstream}/test/net/http", "test/net")
+    cp_r("#{upstream}/net-http.gemspec", "lib/net/http")
   when "readline-ext"
     rm_rf(%w[ext/readline test/readline])
     cp_r("#{upstream}/ext/readline", "ext")
@@ -296,7 +326,7 @@ def sync_default_gems(gem)
   end
 end
 
-IGNORE_FILE_PATTERN = /(\.travis.yml|appveyor\.yml|azure\-pipelines\.yml|\.gitignore|Gemfile|README\.md|History\.txt|Rakefile|CODE_OF_CONDUCT\.md)/
+IGNORE_FILE_PATTERN = /\A(?:\.travis.yml|appveyor\.yml|azure-pipelines\.yml|\.git(?:ignore|hub)|Gemfile|README\.md|History\.txt|Rakefile|CODE_OF_CONDUCT\.md)/
 
 def sync_default_gems_with_commits(gem, range)
   puts "Sync #{$repositories[gem.to_sym]} with commit history."
@@ -318,9 +348,7 @@ def sync_default_gems_with_commits(gem, range)
 
   # Ignore Merge commit and insufficiency commit for ruby core repository.
   commits.delete_if do |sha, subject|
-    files = IO.popen(%W"git diff-tree --no-commit-id --name-only -r #{sha}") do |f|
-      f.readlines
-    end
+    files = IO.popen(%W"git diff-tree --no-commit-id --name-only -r #{sha}", &:readlines)
     subject =~ /^Merge/ || subject =~ /^Auto Merge/ || files.all?{|file| file =~ IGNORE_FILE_PATTERN}
   end
 
@@ -336,7 +364,7 @@ def sync_default_gems_with_commits(gem, range)
     puts "Pick #{sha} from #{$repositories[gem.to_sym]}."
 
     skipped = false
-    result = IO.popen(%W"git cherry-pick #{sha}").read
+    result = IO.popen(%W"git cherry-pick #{sha}", &:read)
     if result =~ /nothing\ to\ commit/
       `git reset`
       skipped = true
@@ -345,12 +373,21 @@ def sync_default_gems_with_commits(gem, range)
     next if skipped
 
     if result.empty?
+      skipped = true
+    elsif result.start_with?("CONFLICT")
+      result = IO.popen(%W"git status --porcelain", &:readlines).each(&:chomp!)
+      ignore = result.map {|line| /^DU / =~ line and IGNORE_FILE_PATTERN =~ (name = $') and name}
+      ignore.compact!
+      system(*%W"git reset", *ignore) unless ignore.empty?
+      skipped = !system({"GIT_EDITOR"=>"true"}, *%W"git cherry-pick --no-edit --continue")
+    end
+
+    if skipped
       failed_commits << sha
       `git reset` && `git checkout .` && `git clean -fd`
-      skipped = true
       puts "Failed to pick #{sha}"
+      next
     end
-    next if skipped
 
     puts "Update commit message: #{sha}"
 
@@ -403,21 +440,27 @@ def update_default_gems(gem)
   Dir.chdir("../../#{author}/#{repository}") do
     unless `git remote`.match(/ruby\-core/)
       `git remote add ruby-core git@github.com:ruby/ruby.git`
-      `git fetch ruby-core --no-tags`
+    end
+    `git fetch ruby-core master --no-tags`
+    unless `git branch`.match(/ruby\-core/)
       `git co ruby-core/master`
       `git branch ruby-core`
     end
-    `git fetch ruby-core master --no-tags`
     `git co ruby-core`
     `git rebase ruby-core/master`
     `git co master`
+    `git fetch origin master`
     `git rebase origin/master`
   end
 end
 
 case ARGV[0]
 when "up"
-  $repositories.keys.each{|gem| update_default_gems(gem.to_s)}
+  if ARGV[1]
+    update_default_gems(ARGV[1])
+  else
+    $repositories.keys.each{|gem| update_default_gems(gem.to_s)}
+  end
 when "all"
   $repositories.keys.each{|gem| sync_default_gems(gem.to_s)}
 else

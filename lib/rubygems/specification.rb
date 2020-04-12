@@ -720,7 +720,7 @@ class Gem::Specification < Gem::BasicSpecification
   # Deprecated: You must now specify the executable name to  Gem.bin_path.
 
   attr_writer :default_executable
-  deprecate :default_executable=, :none,       2018, 12
+  deprecate :default_executable=, :none, 2018, 12
 
   ##
   # Allows deinstallation of gems with legacy platforms.
@@ -733,7 +733,7 @@ class Gem::Specification < Gem::BasicSpecification
   # Formerly used to set rubyforge project.
 
   attr_writer :rubyforge_project
-  deprecate :rubyforge_project=, :none,       2019, 12
+  deprecate :rubyforge_project=, :none, 2019, 12
 
   ##
   # The Gem::Specification version of this gemspec.
@@ -790,16 +790,6 @@ class Gem::Specification < Gem::BasicSpecification
   end
   private_class_method :map_stubs
 
-  def self.uniq_by(list, &block) # :nodoc:
-    list.uniq(&block)
-  end
-  private_class_method :uniq_by
-
-  def self.sort_by!(list, &block)
-    list.sort_by!(&block)
-  end
-  private_class_method :sort_by!
-
   def self.each_spec(dirs) # :nodoc:
     each_gemspec(dirs) do |path|
       spec = self.load path
@@ -814,7 +804,7 @@ class Gem::Specification < Gem::BasicSpecification
     @@stubs ||= begin
       pattern = "*.gemspec"
       stubs = Gem.loaded_specs.values + installed_stubs(dirs, pattern) + default_stubs(pattern)
-      stubs = uniq_by(stubs) { |stub| stub.full_name }
+      stubs = stubs.uniq { |stub| stub.full_name }
 
       _resort!(stubs)
       @@stubs_by_name = stubs.select { |s| Gem::Platform.match s.platform }.group_by(&:name)
@@ -847,7 +837,7 @@ class Gem::Specification < Gem::BasicSpecification
       stubs = Gem.loaded_specs.values +
         installed_stubs(dirs, pattern).select { |s| Gem::Platform.match s.platform } +
         default_stubs(pattern)
-      stubs = uniq_by(stubs) { |stub| stub.full_name }.group_by(&:name)
+      stubs = stubs.uniq { |stub| stub.full_name }.group_by(&:name)
       stubs.each_value { |v| _resort!(v) }
 
       @@stubs_by_name.merge! stubs
@@ -1735,7 +1725,7 @@ class Gem::Specification < Gem::BasicSpecification
     end
     result
   end
-  deprecate :default_executable,  :none,       2018, 12
+  deprecate :default_executable, :none, 2018, 12
 
   ##
   # The default value for specification attribute +name+
@@ -1938,7 +1928,7 @@ class Gem::Specification < Gem::BasicSpecification
   def has_rdoc # :nodoc:
     true
   end
-  deprecate :has_rdoc,            :none,       2018, 12
+  deprecate :has_rdoc, :none, 2018, 12
 
   ##
   # Deprecated and ignored.
@@ -1948,10 +1938,10 @@ class Gem::Specification < Gem::BasicSpecification
   def has_rdoc=(ignored) # :nodoc:
     @has_rdoc = true
   end
-  deprecate :has_rdoc=,           :none,       2018, 12
+  deprecate :has_rdoc=, :none, 2018, 12
 
   alias :has_rdoc? :has_rdoc # :nodoc:
-  deprecate :has_rdoc?,           :none,       2018, 12
+  deprecate :has_rdoc?, :none, 2018, 12
 
   ##
   # True if this gem has files in test_files
@@ -2198,7 +2188,7 @@ class Gem::Specification < Gem::BasicSpecification
 
       attributes.each do |attr_name|
         current_value = self.send attr_name
-        current_value = current_value.sort if %i(files test_files).include? attr_name
+        current_value = current_value.sort if %i[files test_files].include? attr_name
         if current_value != default_value(attr_name) or
            self.class.required_attribute? attr_name
 

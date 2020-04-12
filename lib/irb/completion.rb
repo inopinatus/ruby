@@ -99,7 +99,11 @@ module IRB
         return nil if doc_namespace
         if Symbol.respond_to?(:all_symbols)
           sym = $1
-          candidates = Symbol.all_symbols.collect{|s| ":" + s.id2name}
+          candidates = Symbol.all_symbols.collect do |s|
+            ":" + s.id2name.encode(Encoding.default_external)
+          rescue Encoding::UndefinedConversionError
+            # ignore
+          end
           candidates.grep(/^#{Regexp.quote(sym)}/)
         else
           []
@@ -144,7 +148,7 @@ module IRB
           select_message(receiver, message, candidates, sep)
         end
 
-      when /^(?<num>-?(0[dbo])?[0-9_]+(\.[0-9_]+)?(([eE][+-]?[0-9]+)?i?|r)?)(?<sep>\.|::)(?<mes>[^.]*)$/
+      when /^(?<num>-?(?:0[dbo])?[0-9_]+(?:\.[0-9_]+)?(?:(?:[eE][+-]?[0-9]+)?i?|r)?)(?<sep>\.|::)(?<mes>[^.]*)$/
         # Numeric
         receiver = $~[:num]
         sep = $~[:sep]

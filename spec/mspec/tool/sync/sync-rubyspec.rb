@@ -135,7 +135,7 @@ def rebase_commits(impl)
       else
         last_merge = `git log --grep='^#{impl.last_merge_message}' -n 1 --format='%H %ct'`
       end
-      last_merge, commit_timestamp = last_merge.chomp.split(' ')
+      last_merge, commit_timestamp = last_merge.split(' ')
 
       raise "Could not find last merge" unless last_merge
       puts "Last merge is #{last_merge}"
@@ -158,7 +158,8 @@ def test_new_specs
   require "yaml"
   Dir.chdir(SOURCE_REPO) do
     workflow = YAML.load_file(".github/workflows/ci.yml")
-    versions = workflow.dig("jobs", "test", "strategy", "matrix", "ruby")
+    job_name = MSPEC ? "test" : "specs"
+    versions = workflow.dig("jobs", job_name, "strategy", "matrix", "ruby")
     versions = versions.grep(/^\d+\./) # Test on MRI
     min_version, max_version = versions.minmax
 

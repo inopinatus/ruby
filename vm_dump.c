@@ -8,7 +8,7 @@
 
 **********************************************************************/
 
-#include "ruby/config.h"
+#include "ruby/3/config.h"
 
 #ifdef HAVE_UCONTEXT_H
 # include <ucontext.h>
@@ -111,11 +111,11 @@ control_frame_dump(const rb_execution_context_t *ec, const rb_control_frame_t *c
     }
 
     if (cfp->iseq != 0) {
-#define RUBY_VM_IFUNC_P(ptr) imemo_type_p((VALUE)ptr, imemo_ifunc)
+#define RUBY_VM_IFUNC_P(ptr) IMEMO_TYPE_P(ptr, imemo_ifunc)
 	if (RUBY_VM_IFUNC_P(cfp->iseq)) {
 	    iseq_name = "<ifunc>";
 	}
-	else if (SYMBOL_P(cfp->iseq)) {
+        else if (SYMBOL_P((VALUE)cfp->iseq)) {
 	    tmp = rb_sym2str((VALUE)cfp->iseq);
 	    iseq_name = RSTRING_PTR(tmp);
 	    snprintf(posbuf, MAX_POSBUF, ":%s", iseq_name);
@@ -167,7 +167,7 @@ control_frame_dump(const rb_execution_context_t *ec, const rb_control_frame_t *c
         char buff[0x100];
 
         if (me) {
-            if (imemo_type_p((VALUE)me, imemo_ment)) {
+            if (IMEMO_TYPE_P(me, imemo_ment)) {
                 fprintf(stderr, "  me:\n");
                 fprintf(stderr, "    called_id: %s, type: %s\n", rb_id2name(me->called_id), rb_method_type_name(me->def->type));
                 fprintf(stderr, "    owner class: %s\n", rb_raw_obj_info(buff, 0x100, me->owner));

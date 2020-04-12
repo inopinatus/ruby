@@ -9,16 +9,16 @@
 
 **********************************************************************/
 
-#include "ruby/config.h"
+#include "ruby/3/config.h"
 
 #include <ctype.h>
 
 #include "encindex.h"
 #include "internal.h"
-#include "internal/error.h"
 #include "internal/hash.h"
 #include "internal/imemo.h"
 #include "internal/re.h"
+#include "internal/string.h"
 #include "regint.h"
 #include "ruby/encoding.h"
 #include "ruby/re.h"
@@ -924,12 +924,12 @@ make_regexp(const char *s, long len, rb_encoding *enc, int flags, onig_errmsg_bu
  *  aliased as global variables:
  *
  *  * <code>$~</code> is Regexp.last_match;
- *  * <code>$&</code> is Regexp.last_match<code>[0]</code>;
+ *  * <code>$&</code> is Regexp.last_match<code>[ 0 ]</code>;
  *  * <code>$1</code>, <code>$2</code>, and so on are
- *    Regexp.last_match<code>[i]</code> (captures by number);
+ *    Regexp.last_match<code>[ i ]</code> (captures by number);
  *  * <code>$`</code> is Regexp.last_match<code>.pre_match</code>;
  *  * <code>$'</code> is Regexp.last_match<code>.post_match</code>;
- *  * <code>$+</code> is Regexp.last_match<code>[-1]</code> (the last capture).
+ *  * <code>$+</code> is Regexp.last_match<code>[ -1 ]</code> (the last capture).
  *
  *  See also "Special global variables" section in Regexp documentation.
  */

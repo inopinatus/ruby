@@ -21,12 +21,15 @@ module BasetestReadline
       Readline.point = 0
     rescue NotImplementedError
     end
+    Readline.special_prefixes = ""
+    Readline.completion_append_character = nil
     Readline.input = nil
     Readline.output = nil
     SAVED_ENV.each_with_index {|k, i| ENV[k] = @saved_env[i] }
   end
 
   def test_readline
+    Readline::HISTORY.clear
     omit "Skip Editline" if /EditLine/n.match(Readline::VERSION)
     with_temp_stdio do |stdin, stdout|
       stdin.write("hello\n")
@@ -285,32 +288,6 @@ module BasetestReadline
   # filename_quote_characters
   # special_prefixes
   def test_some_characters_methods
-    method_names = [
-                    "basic_word_break_characters",
-                    "completer_word_break_characters",
-                    "basic_quote_characters",
-                    "completer_quote_characters",
-                    "filename_quote_characters",
-                    "special_prefixes",
-                   ]
-    method_names.each do |method_name|
-      begin
-        begin
-          enc = get_default_internal_encoding
-          saved = Readline.send(method_name.to_sym)
-          expecteds = [" ", " .,|\t", ""]
-          expecteds.each do |e|
-            Readline.send((method_name + "=").to_sym, e)
-            res = Readline.send(method_name.to_sym)
-            assert_equal(e, res)
-            assert_equal(enc, res.encoding, "Readline.#{method_name} should be #{enc.name}")
-          end
-        ensure
-          Readline.send((method_name + "=").to_sym, saved) if saved
-        end
-      rescue NotImplementedError
-      end
-    end
   end
 
   def test_closed_outstream
@@ -510,79 +487,94 @@ module BasetestReadline
   def test_using_quoting_detection_proc
     saved_completer_quote_characters = Readline.completer_quote_characters
     saved_completer_word_break_characters = Readline.completer_word_break_characters
+
+    # skip if previous value is nil because Readline... = nil is not allowed.
+    skip unless saved_completer_quote_characters
+    skip unless saved_completer_word_break_characters
+
     return unless Readline.respond_to?(:quoting_detection_proc=)
 
-    passed_text = nil
-    line = nil
+    begin
+      passed_text = nil
+      line = nil
 
-    with_temp_stdio do |stdin, stdout|
-      replace_stdio(stdin.path, stdout.path) do
-        Readline.completion_proc = ->(text) do
-          passed_text = text
-          ['completion'].map { |i|
-            i.encode(Encoding.default_external)
-          }
-        end
-        Readline.completer_quote_characters = '\'"'
-        Readline.completer_word_break_characters = ' '
-        Readline.quoting_detection_proc = ->(text, index) do
-          index > 0 && text[index-1] == '\\'
-        end
+      with_temp_stdio do |stdin, stdout|
+        replace_stdio(stdin.path, stdout.path) do
+          Readline.completion_proc = ->(text) do
+            passed_text = text
+            ['completion'].map { |i|
+              i.encode(Encoding.default_external)
+            }
+          end
+          Readline.completer_quote_characters = '\'"'
+          Readline.completer_word_break_characters = ' '
+          Readline.quoting_detection_proc = ->(text, index) do
+            index > 0 && text[index-1] == '\\'
+          end
 
-        stdin.write("first second\\ third\t")
-        stdin.flush
-        line = Readline.readline('> ', false)
+          stdin.write("first second\\ third\t")
+          stdin.flush
+          line = Readline.readline('> ', false)
+        end
       end
-    end
 
-    assert_equal('second\\ third', passed_text)
-    assert_equal('first completion', line.chomp(' '))
-  ensure
-    Readline.completer_quote_characters = saved_completer_quote_characters
-    Readline.completer_word_break_characters = saved_completer_word_break_characters
+      assert_equal('second\\ third', passed_text)
+      assert_equal('first completion', line.chomp(' '))
+    ensure
+      Readline.completer_quote_characters = saved_completer_quote_characters
+      Readline.completer_word_break_characters = saved_completer_word_break_characters
+    end
   end
 
   def test_using_quoting_detection_proc_with_multibyte_input
+    Readline.completion_append_character = nil
     saved_completer_quote_characters = Readline.completer_quote_characters
     saved_completer_word_break_characters = Readline.completer_word_break_characters
+
+    # skip if previous value is nil because Readline... = nil is not allowed.
+    skip unless saved_completer_quote_characters
+    skip unless saved_completer_word_break_characters
+
     return unless Readline.respond_to?(:quoting_detection_proc=)
     unless get_default_internal_encoding == Encoding::UTF_8
       return if assert_under_utf8
       omit 'this test needs UTF-8 locale'
     end
 
-    passed_text = nil
-    escaped_char_indexes = []
-    line = nil
+    begin
+      passed_text = nil
+      escaped_char_indexes = []
+      line = nil
 
-    with_temp_stdio do |stdin, stdout|
-      replace_stdio(stdin.path, stdout.path) do
-        Readline.completion_proc = ->(text) do
-          passed_text = text
-          ['completion'].map { |i|
-            i.encode(Encoding.default_external)
-          }
-        end
-        Readline.completer_quote_characters = '\'"'
-        Readline.completer_word_break_characters = ' '
-        Readline.quoting_detection_proc = ->(text, index) do
-          escaped = index > 0 && text[index-1] == '\\'
-          escaped_char_indexes << index if escaped
-          escaped
-        end
+      with_temp_stdio do |stdin, stdout|
+        replace_stdio(stdin.path, stdout.path) do
+          Readline.completion_proc = ->(text) do
+            passed_text = text
+            ['completion'].map { |i|
+              i.encode(Encoding.default_external)
+            }
+          end
+          Readline.completer_quote_characters = '\'"'
+          Readline.completer_word_break_characters = ' '
+          Readline.quoting_detection_proc = ->(text, index) do
+            escaped = index > 0 && text[index-1] == '\\'
+            escaped_char_indexes << index if escaped
+            escaped
+          end
 
-        stdin.write("\u3042\u3093 second\\ third\t")
-        stdin.flush
-        line = Readline.readline('> ', false)
+          stdin.write("\u3042\u3093 second\\ third\t")
+          stdin.flush
+          line = Readline.readline('> ', false)
+        end
       end
-    end
 
-    assert_equal([10], escaped_char_indexes)
-    assert_equal('second\\ third', passed_text)
-    assert_equal("\u3042\u3093 completion", line)
-  ensure
-    Readline.completer_quote_characters = saved_completer_quote_characters
-    Readline.completer_word_break_characters = saved_completer_word_break_characters
+      assert_equal([10], escaped_char_indexes)
+      assert_equal('second\\ third', passed_text)
+      assert_equal("\u3042\u3093 completion#{Readline.completion_append_character}", line)
+    ensure
+      Readline.completer_quote_characters = saved_completer_quote_characters
+      Readline.completer_word_break_characters = saved_completer_word_break_characters
+    end
   end
 
   def test_simple_completion
@@ -782,7 +774,7 @@ class TestReadline < Test::Unit::TestCase
     use_ext_readline
     super
   end
-end if defined?(ReadlineSo)
+end if defined?(ReadlineSo) && ENV["TEST_READLINE_OR_RELINE"] != "Reline"
 
 class TestRelineAsReadline < Test::Unit::TestCase
   include BasetestReadline
@@ -799,4 +791,4 @@ class TestRelineAsReadline < Test::Unit::TestCase
       super
     end
   end
-end if defined?(Reline)
+end if defined?(Reline) && ENV["TEST_READLINE_OR_RELINE"] != "Readline"

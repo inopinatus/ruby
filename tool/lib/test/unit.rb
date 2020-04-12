@@ -64,7 +64,18 @@ module Test
         args = @init_hook.call(args, options) if @init_hook
         non_options(args, options)
         @run_options = orig_args
-        @help = orig_args.map { |s| s =~ /[\s|&<>$()]/ ? s.inspect : s }.join " "
+
+        if seed = options[:seed]
+          srand(seed)
+        else
+          seed = options[:seed] = srand % 100_000
+          srand(seed)
+          orig_args.unshift "--seed=#{seed}"
+        end
+
+        @help = "\n" + orig_args.map { |s|
+          "  " + (s =~ /[\s|&<>$()]/ ? s.inspect : s)
+        }.join("\n")
         @options = options
       end
 
@@ -79,7 +90,7 @@ module Test
         end
 
         opts.on '-s', '--seed SEED', Integer, "Sets random seed" do |m|
-          options[:seed] = m
+          options[:seed] = m.to_i
         end
 
         opts.on '-v', '--verbose', "Verbose. Show progress processing files." do
@@ -463,6 +474,14 @@ module Test
         # Require needed thing for parallel running
         require 'timeout'
         @tasks = @files.dup # Array of filenames.
+
+        case MiniTest::Unit::TestCase.test_order
+        when :random
+          @tasks.shuffle!
+        else
+          # sorted
+        end
+
         @need_quit = false
         @dead_workers = []  # Array of dead workers.
         @warnings = []

@@ -63,7 +63,7 @@
 
 /* for model 2 */
 
-#include "ruby/config.h"
+#include "ruby/3/config.h"
 
 #ifdef __linux__
 // Normally,  gcc(1)  translates  calls to alloca() with inlined code.  This is not done when either the -ansi, -std=c89, -std=c99, or the -std=c11 option is given and the header <alloca.h> is not included.
@@ -309,7 +309,7 @@ static int rb_thread_debug_enabled;
  */
 
 static VALUE
-rb_thread_s_debug(void)
+rb_thread_s_debug(VALUE _)
 {
     return INT2NUM(rb_thread_debug_enabled);
 }
@@ -1477,7 +1477,7 @@ rb_nogvl(void *(*func)(void *), void *data1,
 	data2 = th;
     }
     else if (ubf && vm_living_thread_num(th->vm) == 1) {
-        if (RB_NOGVL_UBF_ASYNC_SAFE) {
+        if (flags & RB_NOGVL_UBF_ASYNC_SAFE) {
             th->vm->ubf_async_safe = 1;
         }
         else {
@@ -5564,6 +5564,19 @@ rb_default_coverage(int n)
     return coverage;
 }
 
+static VALUE
+uninterruptible_exit(VALUE v)
+{
+    rb_thread_t *cur_th = GET_THREAD();
+    rb_ary_pop(cur_th->pending_interrupt_mask_stack);
+
+    cur_th->pending_interrupt_queue_checked = 0;
+    if (!rb_threadptr_pending_interrupt_empty_p(cur_th)) {
+        RUBY_VM_SET_INTERRUPT(cur_th->ec);
+    }
+    return Qnil;
+}
+
 VALUE
 rb_uninterruptible(VALUE (*b_proc)(VALUE), VALUE data)
 {
@@ -5574,5 +5587,8 @@ rb_uninterruptible(VALUE (*b_proc)(VALUE), VALUE data)
     OBJ_FREEZE_RAW(interrupt_mask);
     rb_ary_push(cur_th->pending_interrupt_mask_stack, interrupt_mask);
 
-    return rb_ensure(b_proc, data, rb_ary_pop, cur_th->pending_interrupt_mask_stack);
+    VALUE ret = rb_ensure(b_proc, data, uninterruptible_exit, Qnil);
+
+    RUBY_VM_CHECK_INTS(cur_th->ec);
+    return ret;
 }

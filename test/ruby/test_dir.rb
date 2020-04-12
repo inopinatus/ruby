@@ -318,26 +318,52 @@ class TestDir < Test::Unit::TestCase
 
   def test_entries
     assert_entries(Dir.open(@root) {|dir| dir.entries})
-    assert_entries(Dir.entries(@root).to_a)
+    assert_entries(Dir.entries(@root))
     assert_raise(ArgumentError) {Dir.entries(@root+"\0")}
+    [Encoding::UTF_8, Encoding::ASCII_8BIT].each do |enc|
+      assert_equal(enc, Dir.entries(@root, encoding: enc).first.encoding)
+    end
   end
 
   def test_foreach
     assert_entries(Dir.open(@root) {|dir| dir.each.to_a})
     assert_entries(Dir.foreach(@root).to_a)
     assert_raise(ArgumentError) {Dir.foreach(@root+"\0").to_a}
+    newdir = @root+"/new"
+    e = Dir.foreach(newdir)
+    assert_raise(Errno::ENOENT) {e.to_a}
+    Dir.mkdir(newdir)
+    File.write(newdir+"/a", "")
+    assert_equal(%w[. .. a], e.to_a.sort)
+    [Encoding::UTF_8, Encoding::ASCII_8BIT].each do |enc|
+      e = Dir.foreach(newdir, encoding: enc)
+      assert_equal(enc, e.to_a.first.encoding)
+    end
   end
 
   def test_children
     assert_entries(Dir.open(@root) {|dir| dir.children}, true)
     assert_entries(Dir.children(@root), true)
     assert_raise(ArgumentError) {Dir.children(@root+"\0")}
+    [Encoding::UTF_8, Encoding::ASCII_8BIT].each do |enc|
+      assert_equal(enc, Dir.children(@root, encoding: enc).first.encoding)
+    end
   end
 
   def test_each_child
     assert_entries(Dir.open(@root) {|dir| dir.each_child.to_a}, true)
     assert_entries(Dir.each_child(@root).to_a, true)
     assert_raise(ArgumentError) {Dir.each_child(@root+"\0").to_a}
+    newdir = @root+"/new"
+    e = Dir.each_child(newdir)
+    assert_raise(Errno::ENOENT) {e.to_a}
+    Dir.mkdir(newdir)
+    File.write(newdir+"/a", "")
+    assert_equal(%w[a], e.to_a)
+    [Encoding::UTF_8, Encoding::ASCII_8BIT].each do |enc|
+      e = Dir.each_child(newdir, encoding: enc)
+      assert_equal(enc, e.to_a.first.encoding)
+    end
   end
 
   def test_dir_enc
@@ -517,4 +543,16 @@ class TestDir < Test::Unit::TestCase
       assert_equal([*"a".."z"], list)
     end;
   end if defined?(Process::RLIMIT_NOFILE)
+
+  def test_glob_array_with_destructive_element
+    args = Array.new(100, "")
+    pat = Struct.new(:ary).new(args)
+    args.push(pat, *Array.new(100) {"."*40})
+    def pat.to_path
+      ary.clear
+      GC.start
+      ""
+    end
+    assert_empty(Dir.glob(args))
+  end
 end

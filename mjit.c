@@ -11,7 +11,7 @@
 
 // To share variables privately, include mjit_worker.c instead of linking.
 
-#include "ruby/config.h"
+#include "ruby/3/config.h"
 
 #if USE_MJIT
 
@@ -19,6 +19,7 @@
 #include "id_table.h"
 #include "internal.h"
 #include "internal/class.h"
+#include "internal/cont.h"
 #include "internal/file.h"
 #include "internal/hash.h"
 #include "internal/mjit.h"
@@ -44,25 +45,13 @@ mjit_copy_job_handler(void *data)
         CRITICAL_SECTION_FINISH(3, "in mjit_copy_job_handler");
         return;
     }
-    else if (job->iseq == NULL) { // ISeq GC notified in mjit_mark_iseq
+    else if (job->iseq == NULL) { // ISeq GC notified in mjit_free_iseq
         job->finish_p = true;
         CRITICAL_SECTION_FINISH(3, "in mjit_copy_job_handler");
         return;
     }
 
     const struct rb_iseq_constant_body *body = job->iseq->body;
-    if (job->cc_entries) {
-        unsigned int i;
-        struct rb_call_cache *sink = job->cc_entries;
-        const struct rb_call_data *calls = body->call_data;
-        const struct rb_kwarg_call_data *kw_calls = (struct rb_kwarg_call_data *)&body->call_data[body->ci_size];
-        for (i = 0; i < body->ci_size; i++) {
-            *sink++ = calls[i].cc;
-        }
-        for (i = 0; i < body->ci_kw_size; i++) {
-            *sink++ = kw_calls[i].cc;
-        }
-    }
     if (job->is_entries) {
         memcpy(job->is_entries, body->is_entries, sizeof(union iseq_inline_storage_entry) * body->is_size);
     }
@@ -372,7 +361,14 @@ unload_units(void)
         remove_from_list(worst, &active_units);
         free_unit(worst);
     }
-    verbose(1, "Too many JIT code -- %d units unloaded", units_num - active_units.length);
+
+    if (units_num == active_units.length && mjit_opts.wait) {
+        mjit_opts.max_cache_size++; // avoid infinite loop on `rb_mjit_wait_call`. Note that --jit-wait is just for testing.
+        verbose(1, "No units can be unloaded -- incremented max-cache-size to %d for --jit-wait", mjit_opts.max_cache_size);
+    }
+    else {
+        verbose(1, "Too many JIT code -- %d units unloaded", units_num - active_units.length);
+    }
 }
 
 static void
@@ -381,6 +377,7 @@ mjit_add_iseq_to_process(const rb_iseq_t *iseq, const struct rb_mjit_compile_inf
     if (!mjit_enabled || pch_status == PCH_FAILED)
         return;
 
+    RB_DEBUG_COUNTER_INC(mjit_add_iseq_to_process);
     iseq->body->jit_func = (mjit_func_t)NOT_READY_JIT_ISEQ_FUNC;
     create_unit(iseq);
     if (iseq->body->jit_unit == NULL)
@@ -392,6 +389,7 @@ mjit_add_iseq_to_process(const rb_iseq_t *iseq, const struct rb_mjit_compile_inf
     CRITICAL_SECTION_START(3, "in add_iseq_to_process");
     add_to_list(iseq->body->jit_unit, &unit_queue);
     if (active_units.length >= mjit_opts.max_cache_size) {
+        RB_DEBUG_COUNTER_INC(mjit_unload_units);
         unload_units();
     }
     verbose(3, "Sending wakeup signal to workers in mjit_add_iseq_to_process");
@@ -800,6 +798,9 @@ mjit_init(const struct mjit_options *opts)
     rb_native_cond_initialize(&mjit_worker_wakeup);
     rb_native_cond_initialize(&mjit_gc_wakeup);
 
+    // Make sure root_fiber's saved_ec is scanned by mark_ec_units
+    rb_fiber_init_mjit_cont(GET_EC()->fiber_ptr);
+
     // Initialize class_serials cache for compilation
     valid_class_serials = rb_hash_new();
     rb_obj_hide(valid_class_serials);
@@ -981,6 +982,7 @@ mjit_finish(bool close_handle_p)
     verbose(1, "Successful MJIT finish");
 }
 
+// Called by rb_vm_mark() to mark iseq being JIT-ed and iseqs in the unit queue.
 void
 mjit_mark(void)
 {
@@ -1013,6 +1015,24 @@ mjit_mark(void)
     CRITICAL_SECTION_FINISH(4, "mjit_mark");
 
     RUBY_MARK_LEAVE("mjit");
+}
+
+// Called by rb_iseq_mark() to mark cc_entries captured for MJIT
+void
+mjit_mark_cc_entries(const struct rb_iseq_constant_body *const body)
+{
+    const struct rb_callcache **cc_entries;
+    if (body->jit_unit && (cc_entries = body->jit_unit->cc_entries) != NULL) {
+        // It must be `body->jit_unit->cc_entries_size` instead of `body->ci_size` to mark children's cc_entries
+        for (unsigned int i = 0; i < body->jit_unit->cc_entries_size; i++) {
+            const struct rb_callcache *cc = cc_entries[i];
+            if (cc != NULL) {
+                // Pin `cc` and `cc->cme` against GC.compact as their addresses may be written in JIT-ed code.
+                rb_gc_mark((VALUE)cc);
+                rb_gc_mark((VALUE)vm_cc_cme(cc));
+            }
+        }
+    }
 }
 
 // A hook to update valid_class_serials.

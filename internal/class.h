@@ -1,18 +1,18 @@
-#ifndef INTERNAL_CLASS_H /* -*- C -*- */
-#define INTERNAL_CLASS_H
-/**
+/**                                                         \noop-*-C-*-vi:ft=c
  * @file
- * @brief      Internal header for Class.
- * @author     \@shyouhei
+ * @author     Ruby developers <ruby-core@ruby-lang.org>
  * @copyright  This  file  is   a  part  of  the   programming  language  Ruby.
  *             Permission  is hereby  granted,  to  either redistribute  and/or
  *             modify this file, provided that  the conditions mentioned in the
  *             file COPYING are met.  Consult the file for details.
+ * @brief      Internal header for Class.
  */
+#ifndef INTERNAL_CLASS_H
+#define INTERNAL_CLASS_H
 #include "id_table.h"           /* for struct rb_id_table */
 #include "internal/gc.h"        /* for RB_OBJ_WRITE */
 #include "internal/serial.h"    /* for rb_serial_t */
-#include "internal/stdbool.h"   /* for bool */
+#include "ruby/3/stdbool.h"     /* for bool */
 #include "ruby/intern.h"        /* for rb_alloc_func_t */
 #include "ruby/ruby.h"          /* for struct RBasic */
 
@@ -41,6 +41,7 @@ struct rb_classext_struct {
 #endif
     struct rb_id_table *const_tbl;
     struct rb_id_table *callable_m_tbl;
+    struct rb_id_table *cc_tbl; /* ID -> [[ci, cc1], cc2, ...] */
     struct rb_subclass_entry *subclasses;
     struct rb_subclass_entry **parent_subclasses;
     /**
@@ -83,6 +84,7 @@ typedef struct rb_classext_struct rb_classext_t;
 # define RCLASS_M_TBL(c) (RCLASS(c)->m_tbl)
 #endif
 #define RCLASS_CALLABLE_M_TBL(c) (RCLASS_EXT(c)->callable_m_tbl)
+#define RCLASS_CC_TBL(c) (RCLASS_EXT(c)->cc_tbl)
 #define RCLASS_IV_INDEX_TBL(c) (RCLASS_EXT(c)->iv_index_tbl)
 #define RCLASS_ORIGIN(c) (RCLASS_EXT(c)->origin_)
 #define RCLASS_REFINED_CLASS(c) (RCLASS_EXT(c)->refined_class)

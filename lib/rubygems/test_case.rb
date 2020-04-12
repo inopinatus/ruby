@@ -78,6 +78,20 @@ module Gem
   end
 end
 
+require "rubygems/command"
+
+class Gem::Command
+
+  ##
+  # Allows resetting the hash of specific args per command.  This method is
+  # available when requiring 'rubygems/test_case'
+
+  def self.specific_extra_args_hash=(value)
+    @specific_extra_args_hash = value
+  end
+
+end
+
 ##
 # RubyGemTestCase provides a variety of methods for testing rubygems and
 # gem-related behavior in a sandbox.  Through RubyGemTestCase you can install
@@ -111,12 +125,6 @@ class Gem::TestCase < (defined?(Minitest::Test) ? Minitest::Test : MiniTest::Uni
     loaded = Gem.loaded_specs.values.map(&:full_name)
 
     assert_equal expected.sort, loaded.sort if expected
-  end
-
-  # TODO: move to minitest
-  def assert_path_exists(path, msg = nil)
-    msg = message(msg) { "Expected path '#{path}' to exist" }
-    assert File.exist?(path), msg
   end
 
   def assert_directory_exists(path, msg = nil)
@@ -210,12 +218,6 @@ class Gem::TestCase < (defined?(Minitest::Test) ? Minitest::Test : MiniTest::Uni
     else
       RbConfig::CONFIG.delete 'EXEEXT'
     end
-  end
-
-  # TODO: move to minitest
-  def refute_path_exists(path, msg = nil)
-    msg = message(msg) { "Expected path '#{path}' to not exist" }
-    refute File.exist?(path), msg
   end
 
   def scan_make_command_lines(output)
@@ -562,7 +564,7 @@ class Gem::TestCase < (defined?(Minitest::Test) ? Minitest::Test : MiniTest::Uni
   end
 
   def in_path?(executable) # :nodoc:
-    return true if %r%\A([A-Z]:|/)% =~ executable and File.exist? executable
+    return true if %r{\A([A-Z]:|/)} =~ executable and File.exist? executable
 
     ENV['PATH'].split(File::PATH_SEPARATOR).any? do |directory|
       File.exist? File.join directory, executable
@@ -830,9 +832,7 @@ class Gem::TestCase < (defined?(Minitest::Test) ? Minitest::Test : MiniTest::Uni
     end
 
     if deps
-      # Since Hash#each is unordered in 1.8, sort the keys and iterate that
-      # way so the tests are deterministic on all implementations.
-      deps.keys.sort.each do |n|
+      deps.keys.each do |n|
         spec.add_dependency n, (deps[n] || '>= 0')
       end
     end
@@ -859,10 +859,7 @@ class Gem::TestCase < (defined?(Minitest::Test) ? Minitest::Test : MiniTest::Uni
   def util_gem(name, version, deps = nil, &block)
     if deps
       block = proc do |s|
-        # Since Hash#each is unordered in 1.8, sort
-        # the keys and iterate that way so the tests are
-        # deterministic on all implementations.
-        deps.keys.sort.each do |n|
+        deps.keys.each do |n|
           s.add_dependency n, (deps[n] || '>= 0')
         end
       end
@@ -1010,7 +1007,7 @@ Also, a list:
 
     spec_fetcher = Gem::SpecFetcher.fetcher
 
-    prerelease, all = all_specs.partition { |spec| spec.version.prerelease?  }
+    prerelease, all = all_specs.partition { |spec| spec.version.prerelease? }
     latest = Gem::Specification._latest_specs all_specs
 
     spec_fetcher.specs[@uri] = []
@@ -1246,10 +1243,7 @@ Also, a list:
     end
 
     begin
-      require "rbconfig"
-      File.join(RbConfig::CONFIG["bindir"],
-                RbConfig::CONFIG["ruby_install_name"] +
-                RbConfig::CONFIG["EXEEXT"])
+      Gem.ruby
     rescue LoadError
       "ruby"
     end
@@ -1275,7 +1269,7 @@ Also, a list:
 
     def escape_path(*path)
       path = File.join(*path)
-      if %r'\A[-+:/=@,.\w]+\z' =~ path
+      if %r{\A[-+:/=@,.\w]+\z} =~ path
         path
       else
         "\"#{path.gsub(/[`$"]/, '\\&')}\""

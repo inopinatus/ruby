@@ -335,10 +335,14 @@ rubyhdrdir = CONFIG["rubyhdrdir", true]
 archhdrdir = CONFIG["rubyarchhdrdir"] || (rubyhdrdir + "/" + CONFIG['arch'])
 rubylibdir = CONFIG["rubylibdir", true]
 archlibdir = CONFIG["rubyarchdir", true]
-sitelibdir = CONFIG["sitelibdir"]
-sitearchlibdir = CONFIG["sitearchdir"]
-vendorlibdir = CONFIG["vendorlibdir"]
-vendorarchlibdir = CONFIG["vendorarchdir"]
+if CONFIG["sitedir"]
+  sitelibdir = CONFIG["sitelibdir"]
+  sitearchlibdir = CONFIG["sitearchdir"]
+end
+if CONFIG["vendordir"]
+  vendorlibdir = CONFIG["vendorlibdir"]
+  vendorarchlibdir = CONFIG["vendorarchdir"]
+end
 mandir = CONFIG["mandir", true]
 docdir = CONFIG["docdir", true]
 enable_shared = CONFIG["ENABLE_SHARED"] == 'yes'
@@ -675,7 +679,7 @@ module RbInstall
             remove_prefix(prefix, ruby_source)
           end
         else
-          [remove_prefix(File.dirname(@gemspec) + '/', @gemspec.gsub(/gemspec/, 'rb'))]
+          [File.basename(@gemspec, '.gemspec') + '.rb']
         end
       end
 
@@ -706,29 +710,34 @@ module RbInstall
     end
   end
 
-  class UnpackedInstaller < Gem::Installer
-    module DirPackage
-      def extract_files(destination_dir, pattern = "*")
-        path = File.dirname(@gem.path)
-        return if path == destination_dir
-        File.chmod(0700, destination_dir)
-        mode = pattern == "bin/*" ? $script_mode : $data_mode
-        spec.files.each do |f|
-          src = File.join(path, f)
-          dest = File.join(without_destdir(destination_dir), f)
-          makedirs(dest[/.*(?=\/)/m])
-          install src, dest, :mode => mode
-        end
-        File.chmod($dir_mode, destination_dir)
+  class DirPackage
+    attr_reader :spec
+
+    attr_accessor :dir_mode
+    attr_accessor :prog_mode
+    attr_accessor :data_mode
+
+    def initialize(spec)
+      @spec = spec
+      @src_dir = File.dirname(@spec.loaded_from)
+    end
+
+    def extract_files(destination_dir, pattern = "*")
+      return if @src_dir == destination_dir
+      File.chmod(0700, destination_dir)
+      mode = pattern == File.join(spec.bindir, '*') ? prog_mode : data_mode
+      destdir = without_destdir(destination_dir)
+      spec.files.each do |f|
+        src = File.join(@src_dir, f)
+        dest = File.join(destdir, f)
+        makedirs(dest[/.*(?=\/)/m])
+        install src, dest, :mode => mode
       end
+      File.chmod(dir_mode, destination_dir)
     end
+  end
 
-    def initialize(spec, *options)
-      package = Gem::Package.new(spec.loaded_from)
-      super(package, *options)
-      @package.extend(DirPackage).spec = spec
-    end
-
+  class UnpackedInstaller < Gem::Installer
     def write_cache_file
     end
 
@@ -814,12 +823,11 @@ end
 
 def install_default_gem(dir, srcdir)
   gem_dir = Gem.default_dir
-  directories = Gem.ensure_gem_subdirectories(gem_dir, :mode => $dir_mode)
-  prepare "default gems from #{dir}", gem_dir, directories
+  install_dir = with_destdir(gem_dir)
+  Gem.ensure_default_gem_subdirectories(install_dir, $dir_mode)
+  prepare "default gems from #{dir}", gem_dir
 
-  spec_dir = File.join(gem_dir, directories.grep(/^spec/)[0])
-  default_spec_dir = "#{spec_dir}/default"
-  makedirs(default_spec_dir)
+  default_spec_dir = Gem.default_specifications_dir
 
   gems = Dir.glob("#{srcdir}/#{dir}/**/*.gemspec").map {|src|
     spec = load_gemspec(src)
@@ -861,9 +869,9 @@ end
 
 install?(:ext, :comm, :gem, :'bundled-gems') do
   gem_dir = Gem.default_dir
-  directories = Gem.ensure_gem_subdirectories(gem_dir, :mode => $dir_mode)
-  prepare "bundled gems", gem_dir, directories
   install_dir = with_destdir(gem_dir)
+  Gem.ensure_gem_subdirectories(install_dir, $dir_mode)
+  prepare "bundled gems", gem_dir
   installed_gems = {}
   options = {
     :install_dir => install_dir,
@@ -872,22 +880,26 @@ install?(:ext, :comm, :gem, :'bundled-gems') do
     :ignore_dependencies => true,
     :dir_mode => $dir_mode,
     :data_mode => $data_mode,
-    :prog_mode => $prog_mode,
+    :prog_mode => $script_mode,
     :wrappers => true,
     :format_executable => true,
   }
   gem_ext_dir = "#$extout/gems/#{CONFIG['arch']}"
   extensions_dir = Gem::StubSpecification.gemspec_stub("", gem_dir, gem_dir).extensions_dir
-  dirs = Gem::Util.glob_files_in_dir "*/", "#{srcdir}/gems"
-  Gem::Specification.each_gemspec(dirs) do |path|
+  File.foreach("#{srcdir}/gems/bundled_gems") do |name|
+    next unless /^(\S+)\s+(\S+).*/ =~ name
+    gem_name = "#$1-#$2"
+    path = "#{srcdir}/.bundle/gems/#{gem_name}/#$1.gemspec"
+    next unless File.exist?(path)
     spec = load_gemspec(path)
     next unless spec.platform == Gem::Platform::RUBY
-    next unless spec.full_name == path[srcdir.size..-1][/\A\/gems\/([^\/]+)/, 1]
+    next unless spec.full_name == gem_name
     spec.extension_dir = "#{extensions_dir}/#{spec.full_name}"
     if File.directory?(ext = "#{gem_ext_dir}/#{spec.full_name}")
       spec.extensions[0] ||= "-"
     end
-    ins = RbInstall::UnpackedInstaller.new(spec, options)
+    package = RbInstall::DirPackage.new spec
+    ins = RbInstall::UnpackedInstaller.new(package, options)
     puts "#{INDENT}#{spec.name} #{spec.version}"
     ins.install
     File.chmod($data_mode, File.join(install_dir, "specifications", "#{spec.full_name}.gemspec"))

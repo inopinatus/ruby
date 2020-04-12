@@ -11,8 +11,10 @@
 
 **********************************************************************/
 
-#include "ruby/config.h"
+#include "ruby/3/config.h"
 #include <stddef.h>
+#include "ruby/3/stdbool.h"
+#include "ccan/list/list.h"
 #include "constant.h"
 #include "debug_counter.h"
 #include "id.h"
@@ -25,8 +27,6 @@
 #include "internal/hash.h"
 #include "internal/re.h"
 #include "internal/symbol.h"
-#include "internal/stdbool.h"
-#include "ccan/list/list.h"
 #include "internal/thread.h"
 #include "internal/variable.h"
 #include "ruby/encoding.h"
@@ -72,6 +72,7 @@ rb_namespace_p(VALUE obj)
     if (RB_SPECIAL_CONST_P(obj)) return false;
     switch (RB_BUILTIN_TYPE(obj)) {
       case T_MODULE: case T_CLASS: return true;
+      default: break;
     }
     return false;
 }
@@ -1807,8 +1808,10 @@ struct autoload_const {
     VALUE mod;
     VALUE ad; /* autoload_data_i */
     VALUE value;
+    VALUE file;
     ID id;
     rb_const_flag_t flag;
+    int line;
 };
 
 /* always on stack, no need to mark */
@@ -1877,6 +1880,7 @@ autoload_c_compact(void *ptr)
     ac->mod = rb_gc_location(ac->mod);
     ac->ad = rb_gc_location(ac->ad);
     ac->value = rb_gc_location(ac->value);
+    ac->file = rb_gc_location(ac->file);
 }
 
 static void
@@ -1887,6 +1891,7 @@ autoload_c_mark(void *ptr)
     rb_gc_mark_movable(ac->mod);
     rb_gc_mark_movable(ac->ad);
     rb_gc_mark_movable(ac->value);
+    rb_gc_mark_movable(ac->file);
 }
 
 static void
@@ -2123,9 +2128,8 @@ autoload_defined_p(VALUE mod, ID id)
 static void const_tbl_update(struct autoload_const *);
 
 static VALUE
-autoload_const_set(VALUE arg)
+autoload_const_set(struct autoload_const *ac)
 {
-    struct autoload_const *ac = (struct autoload_const *)arg;
     VALUE klass = ac->mod;
     ID id = ac->id;
     check_before_mod_set(klass, id, ac->value, "constant");
@@ -2169,7 +2173,7 @@ autoload_reset(VALUE arg)
 
         list_for_each_safe(&ele->constants, ac, next, cnode) {
             if (ac->value != Qundef) {
-                autoload_const_set((VALUE)ac);
+                autoload_const_set(ac);
             }
         }
     }
@@ -2773,11 +2777,11 @@ rb_const_set(VALUE klass, ID id, VALUE val)
 	setup_const_entry(ce, klass, val, CONST_PUBLIC);
     }
     else {
-	struct autoload_const ac;
-	ac.mod = klass;
-	ac.id = id;
-	ac.value = val;
-	ac.flag = CONST_PUBLIC;
+        struct autoload_const ac = {
+            .mod = klass, .id = id,
+            .value = val, .flag = CONST_PUBLIC,
+            /* fill the rest with 0 */
+        };
 	const_tbl_update(&ac);
     }
     /*
@@ -2842,10 +2846,17 @@ const_tbl_update(struct autoload_const *ac)
 		rb_clear_constant_cache();
 
 		ac->value = val; /* autoload_i is non-WB-protected */
-		return;
+                ac->file = rb_source_location(&ac->line);
 	    }
-	    /* otherwise, allow to override */
-	    autoload_delete(klass, id);
+            else {
+                /* otherwise autoloaded constant, allow to override */
+                autoload_delete(klass, id);
+                ce->flag = visibility;
+                RB_OBJ_WRITE(klass, &ce->value, val);
+                RB_OBJ_WRITE(klass, &ce->file, ac->file);
+                ce->line = ac->line;
+            }
+            return;
 	}
 	else {
 	    VALUE name = QUOTE_ID(id);
@@ -3053,7 +3064,8 @@ cvar_overtaken(VALUE front, VALUE target, ID id)
 	st_data_t did = (st_data_t)id;
 
         if (RTEST(ruby_verbose) && original_module(front) != original_module(target)) {
-	    rb_warning("class variable % "PRIsVALUE" of %"PRIsVALUE" is overtaken by %"PRIsVALUE"",
+            rb_raise(rb_eRuntimeError,
+                     "class variable % "PRIsVALUE" of %"PRIsVALUE" is overtaken by %"PRIsVALUE"",
 		       ID2SYM(id), rb_class_name(original_module(front)),
 		       rb_class_name(original_module(target)));
 	}

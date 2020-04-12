@@ -11,7 +11,7 @@
 
 **********************************************************************/
 
-#include "ruby/config.h"
+#include "ruby/3/config.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -2390,6 +2390,8 @@ check_hash(VALUE obj)
       case T_STRING:
       case T_ARRAY:
 	return Qnil;
+      default:
+        break;
     }
     return rb_check_hash_type(obj);
 }
@@ -7953,29 +7955,30 @@ rb_clock_gettime(int argc, VALUE *argv, VALUE _)
  *  call-seq:
  *     Process.clock_getres(clock_id [, unit])   -> number
  *
- *  Returns the time resolution returned by POSIX clock_getres() function.
+ *  Returns an estimate of the resolution of a +clock_id+ using the POSIX
+ *  <code>clock_getres()</code> function.
+ *
+ *  Note the reported resolution is often inaccurate on most platforms due to
+ *  operating system bugs for this function and therefore the reported resolution
+ *  often differs from the actual resolution of the clock in practice.
  *
  *  +clock_id+ specifies a kind of clock.
  *  See the document of +Process.clock_gettime+ for details.
- *
- *  +clock_id+ can be a symbol as +Process.clock_gettime+.
- *  However the result may not be accurate.
- *  For example, <code>Process.clock_getres(:GETTIMEOFDAY_BASED_CLOCK_REALTIME)</code>
- *  returns 1.0e-06 which means 1 microsecond, but actual resolution can be more coarse.
+ *  +clock_id+ can be a symbol as for +Process.clock_gettime+.
  *
  *  If the given +clock_id+ is not supported, Errno::EINVAL is raised.
  *
- *  +unit+ specifies a type of the return value.
+ *  +unit+ specifies the type of the return value.
  *  +Process.clock_getres+ accepts +unit+ as +Process.clock_gettime+.
- *  The default value, +:float_second+, is also same as
+ *  The default value, +:float_second+, is also the same as
  *  +Process.clock_gettime+.
  *
  *  +Process.clock_getres+ also accepts +:hertz+ as +unit+.
- *  +:hertz+ means a the reciprocal of +:float_second+.
+ *  +:hertz+ means the reciprocal of +:float_second+.
  *
  *  +:hertz+ can be used to obtain the exact value of
- *  the clock ticks per second for times() function and
- *  CLOCKS_PER_SEC for clock() function.
+ *  the clock ticks per second for the times() function and
+ *  CLOCKS_PER_SEC for the clock() function.
  *
  *  <code>Process.clock_getres(:TIMES_BASED_CLOCK_PROCESS_CPUTIME_ID, :hertz)</code>
  *  returns the clock ticks per second.

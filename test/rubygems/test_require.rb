@@ -70,7 +70,7 @@ class TestGemRequire < Gem::TestCase
     assert_require 'test_gem_require_a'
     assert_require 'b/c' # this should be required from -I
     assert_equal "world", ::Object::HELLO
-    assert_equal %w(a-1 b-1), loaded_spec_names
+    assert_equal %w[a-1 b-1], loaded_spec_names
   ensure
     $LOAD_PATH.replace lp
     Object.send :remove_const, :HELLO if Object.const_defined? :HELLO
@@ -114,10 +114,28 @@ class TestGemRequire < Gem::TestCase
     assert_require 'b/c'
     assert_require 'c/c' # this should be required from -I
     assert_equal "world", ::Object::HELLO
-    assert_equal %w(a-1 b-1), loaded_spec_names
+    assert_equal %w[a-1 b-1], loaded_spec_names
   ensure
     $LOAD_PATH.replace lp
     Object.send :remove_const, :HELLO if Object.const_defined? :HELLO
+  end
+
+  def test_dash_i_respects_default_library_extension_priority
+    skip "extensions don't quite work on jruby" if Gem.java_platform?
+
+    dash_i_ext_arg = util_install_extension_file('a')
+    dash_i_lib_arg = util_install_ruby_file('a')
+
+    lp = $LOAD_PATH.dup
+
+    begin
+      $LOAD_PATH.unshift dash_i_lib_arg
+      $LOAD_PATH.unshift dash_i_ext_arg
+      assert_require 'a'
+      assert_match(/a\.rb$/, $LOADED_FEATURES.last)
+    ensure
+      $LOAD_PATH.replace lp
+    end
   end
 
   def test_concurrent_require
@@ -153,11 +171,11 @@ class TestGemRequire < Gem::TestCase
     install_specs b1, b2, a1
 
     assert_require 'test_gem_require_a'
-    assert_equal %w(a-1 b-1), loaded_spec_names
+    assert_equal %w[a-1 b-1], loaded_spec_names
     assert_equal unresolved_names, []
 
     assert_require "b/c"
-    assert_equal %w(a-1 b-1), loaded_spec_names
+    assert_equal %w[a-1 b-1], loaded_spec_names
   end
 
   def test_require_is_lazy_with_inexact_req
@@ -168,11 +186,11 @@ class TestGemRequire < Gem::TestCase
     install_specs b1, b2, a1
 
     assert_require 'test_gem_require_a'
-    assert_equal %w(a-1), loaded_spec_names
+    assert_equal %w[a-1], loaded_spec_names
     assert_equal unresolved_names, ["b (>= 1)"]
 
     assert_require "b/c"
-    assert_equal %w(a-1 b-2), loaded_spec_names
+    assert_equal %w[a-1 b-2], loaded_spec_names
   end
 
   def test_require_is_not_lazy_with_one_possible
@@ -182,11 +200,11 @@ class TestGemRequire < Gem::TestCase
     install_specs b1, a1
 
     assert_require 'test_gem_require_a'
-    assert_equal %w(a-1 b-1), loaded_spec_names
+    assert_equal %w[a-1 b-1], loaded_spec_names
     assert_equal unresolved_names, []
 
     assert_require "b/c"
-    assert_equal %w(a-1 b-1), loaded_spec_names
+    assert_equal %w[a-1 b-1], loaded_spec_names
   end
 
   def test_require_can_use_a_pathname_object
@@ -195,7 +213,7 @@ class TestGemRequire < Gem::TestCase
     install_specs a1
 
     assert_require Pathname.new 'test_gem_require_a'
-    assert_equal %w(a-1), loaded_spec_names
+    assert_equal %w[a-1], loaded_spec_names
     assert_equal unresolved_names, []
   end
 
@@ -228,7 +246,7 @@ class TestGemRequire < Gem::TestCase
     # This case is fine because our lazy loading is provided exactly
     # the same behavior as eager loading would have.
 
-    assert_equal %w(a-1 b-2), loaded_spec_names
+    assert_equal %w[a-1 b-2], loaded_spec_names
   ensure
     $LOAD_PATH.replace lp unless java_platform?
   end
@@ -244,12 +262,12 @@ class TestGemRequire < Gem::TestCase
 
     a1.activate
     c1.activate
-    assert_equal %w(a-1 c-1), loaded_spec_names
+    assert_equal %w[a-1 c-1], loaded_spec_names
     assert_equal ["b (> 0)"], unresolved_names
 
     assert require("ib")
 
-    assert_equal %w(a-1 b-1 c-1), loaded_spec_names
+    assert_equal %w[a-1 b-1 c-1], loaded_spec_names
     assert_equal [], unresolved_names
   end
 
@@ -266,7 +284,7 @@ class TestGemRequire < Gem::TestCase
 
     a1.activate
     c1.activate
-    assert_equal %w(a-1 c-1), loaded_spec_names
+    assert_equal %w[a-1 c-1], loaded_spec_names
     assert_equal ["b (> 0)", "x (> 0)"], unresolved_names
 
     e = assert_raises(Gem::LoadError) do
@@ -289,7 +307,7 @@ class TestGemRequire < Gem::TestCase
 
     a1.activate
     c1.activate
-    assert_equal %w(a-1 c-1), loaded_spec_names
+    assert_equal %w[a-1 c-1], loaded_spec_names
     assert_equal ["b (> 0)"], unresolved_names
 
     e = assert_raises(Gem::LoadError) do
@@ -320,9 +338,9 @@ class TestGemRequire < Gem::TestCase
 
     # Require gems that have not been removed.
     assert_require 'a/b'
-    assert_equal %w(a-1.0), loaded_spec_names
+    assert_equal %w[a-1.0], loaded_spec_names
     assert_require 'b/d'
-    assert_equal %w(a-1.0 b-2.0), loaded_spec_names
+    assert_equal %w[a-1.0 b-2.0], loaded_spec_names
   end
 
   def test_require_doesnt_traverse_development_dependencies
@@ -334,7 +352,7 @@ class TestGemRequire < Gem::TestCase
     install_specs a, w1, w2, z
 
     assert gem("z")
-    assert_equal %w(z-1), loaded_spec_names
+    assert_equal %w[z-1], loaded_spec_names
     assert_equal ["w (> 0)"], unresolved_names
 
     assert require("a#{$$}")
@@ -345,7 +363,7 @@ class TestGemRequire < Gem::TestCase
                                         nil, "default/gem.rb")
     install_default_specs(default_gem_spec)
     assert_require "default/gem"
-    assert_equal %w(default-2.0.0.0), loaded_spec_names
+    assert_equal %w[default-2.0.0.0], loaded_spec_names
   end
 
   def test_default_gem_require_activates_just_once
@@ -385,7 +403,7 @@ class TestGemRequire < Gem::TestCase
                                "lib/default/gem.rb")
     install_specs(normal_gem_spec)
     assert_require "default/gem"
-    assert_equal %w(default-3.0), loaded_spec_names
+    assert_equal %w[default-3.0], loaded_spec_names
   end
 
   def test_default_gem_prerelease
@@ -398,7 +416,7 @@ class TestGemRequire < Gem::TestCase
     install_default_specs(normal_gem_higher_prerelease_spec)
 
     assert_require "default/gem"
-    assert_equal %w(default-3.0.0.rc2), loaded_spec_names
+    assert_equal %w[default-3.0.0.rc2], loaded_spec_names
   end
 
   def loaded_spec_names
@@ -444,7 +462,7 @@ class TestGemRequire < Gem::TestCase
       end
     end
     assert c.send(:require, "default/gem")
-    assert_equal %w(default-2.0.0.0), loaded_spec_names
+    assert_equal %w[default-2.0.0.0], loaded_spec_names
   end
 
   def test_require_default_when_gem_defined
@@ -456,7 +474,7 @@ class TestGemRequire < Gem::TestCase
       end
     end
     assert c.send(:require, "a#{$$}")
-    assert_equal %W(a#{$$}-1), loaded_spec_names
+    assert_equal %W[a#{$$}-1], loaded_spec_names
   end
 
   def test_require_bundler
@@ -518,15 +536,15 @@ class TestGemRequire < Gem::TestCase
       define_method "test_no_other_behavioral_changes_with_#{prefix.tr(".", "_")}warn" do
         lib = File.realpath("../../../lib", __FILE__)
         Dir.mktmpdir("warn_test") do |dir|
-          File.write(dir + "/main.rb", "warn({x:1}, {y:2}, [])\n")
+          File.write(dir + "/main.rb", "#{prefix}warn({x:1}, {y:2}, [])\n")
           _, err = capture_subprocess_io do
-            system(@@ruby, "-w", "-rpp", "--disable=gems", "-I", lib, "-C", dir, "-I.", "main.rb")
+            system(@@ruby, "-w", "--disable=gems", "-I", lib, "-C", dir, "main.rb")
           end
-          assert_equal("{:x=>1}\n{:y=>2}\n", err)
+          assert_match(/{:x=>1}\n{:y=>2}\n$/, err)
           _, err = capture_subprocess_io do
-            system(@@ruby, "-w", "-rpp", "--enable=gems", "-I", lib, "-C", dir, "-I.", "main.rb")
+            system(@@ruby, "-w", "--enable=gems", "-I", lib, "-C", dir, "main.rb")
           end
-          assert_equal("{:x=>1}\n{:y=>2}\n", err)
+          assert_match(/{:x=>1}\n{:y=>2}\n$/, err)
         end
       end
     end
@@ -539,6 +557,52 @@ class TestGemRequire < Gem::TestCase
     yield
   ensure
     $VERBOSE = old_verbose
+  end
+
+  def util_install_extension_file(name)
+    spec = quick_gem name
+    util_build_gem spec
+
+    spec.extensions << "extconf.rb"
+    write_file File.join(@tempdir, "extconf.rb") do |io|
+      io.write <<-RUBY
+        require "mkmf"
+        CONFIG['LDSHARED'] = '$(TOUCH) $@ ||'
+        create_makefile("#{name}")
+      RUBY
+    end
+
+    write_file File.join(@tempdir, "#{name}.c") do |io|
+      io.write <<-C
+        void Init_#{name}() { }
+      C
+    end
+
+    write_file File.join(@tempdir, "depend")
+
+    spec.files += ["extconf.rb", "depend", "#{name}.c"]
+
+    so = File.join(spec.gem_dir, "#{name}.#{RbConfig::CONFIG["DLEXT"]}")
+    refute_path_exists so
+
+    path = Gem::Package.build spec
+    installer = Gem::Installer.at path
+    installer.install
+    assert_path_exists so
+
+    spec.gem_dir
+  end
+
+  def util_install_ruby_file(name)
+    dir_lib = Dir.mktmpdir("test_require_lib", @tempdir)
+    dash_i_lib_arg = File.join dir_lib
+
+    a_rb = File.join dash_i_lib_arg, "#{name}.rb"
+
+    FileUtils.mkdir_p File.dirname a_rb
+    File.open(a_rb, 'w') { |f| f.write "# #{name}.rb" }
+
+    dash_i_lib_arg
   end
 
 end

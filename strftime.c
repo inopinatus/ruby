@@ -47,7 +47,7 @@
  * January 1996
  */
 
-#include "ruby/config.h"
+#include "ruby/3/config.h"
 
 #ifndef GAWK
 #include <stdio.h>
@@ -331,7 +331,9 @@ rb_strftime_with_timespec(VALUE ftime, const char *format, size_t format_len,
 			s += len; \
 			if (i > 0) case_conv(s, i, flags); \
 			if (precision > i) {\
+				s += i; \
 				NEEDS(precision); \
+				s -= i; \
 				memmove(s + precision - i, s, i);\
 				memset(s, padding ? padding : ' ', precision - i); \
 				s += precision;	\

@@ -1,19 +1,19 @@
-#ifndef INTERNAL_IMEMO_H /* -*- C -*- */
-#define INTERNAL_IMEMO_H
-/**
+/**                                                         \noop-*-C-*-vi:ft=c
  * @file
- * @brief      IMEMO: Internal memo object.
- * @author     \@shyouhei
+ * @author     Ruby developers <ruby-core@ruby-lang.org>
  * @copyright  This  file  is   a  part  of  the   programming  language  Ruby.
  *             Permission  is hereby  granted,  to  either redistribute  and/or
  *             modify this file, provided that  the conditions mentioned in the
  *             file COPYING are met.  Consult the file for details.
+ * @brief      IMEMO: Internal memo object.
  */
-#include "ruby/config.h"
+#ifndef INTERNAL_IMEMO_H
+#define INTERNAL_IMEMO_H
+#include "ruby/3/config.h"
 #include <stddef.h>             /* for size_t */
 #include "internal/array.h"     /* for rb_ary_tmp_new_fill */
 #include "internal/gc.h"        /* for RB_OBJ_WRITE */
-#include "internal/stdbool.h"   /* for bool */
+#include "ruby/3/stdbool.h"     /* for bool */
 #include "ruby/ruby.h"          /* for rb_block_call_func_t */
 
 #ifndef IMEMO_DEBUG
@@ -29,6 +29,7 @@
 #define IMEMO_FL_USER2 FL_USER6
 #define IMEMO_FL_USER3 FL_USER7
 #define IMEMO_FL_USER4 FL_USER8
+#define IMEMO_FL_USER5 FL_USER9
 
 enum imemo_type {
     imemo_env            =  0,
@@ -41,7 +42,9 @@ enum imemo_type {
     imemo_iseq           =  7,
     imemo_tmpbuf         =  8,
     imemo_ast            =  9,
-    imemo_parser_strterm = 10
+    imemo_parser_strterm = 10,
+    imemo_callinfo       = 11,
+    imemo_callcache      = 12,
 };
 
 /* CREF (Class REFerence) is defined in method.h */
@@ -169,6 +172,8 @@ imemo_type_p(VALUE imemo, enum imemo_type imemo_type)
         return 0;
     }
 }
+
+#define IMEMO_TYPE_P(v, t) imemo_type_p((VALUE)v, t)
 
 static inline bool
 imemo_throw_data_p(VALUE imemo)

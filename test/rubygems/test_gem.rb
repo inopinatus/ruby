@@ -42,12 +42,12 @@ class TestGem < Gem::TestCase
 
       a1.activate
 
-      assert_equal %w(a-1), loaded_spec_names
+      assert_equal %w[a-1], loaded_spec_names
       assert_equal ["b (> 0)"], unresolved_names
 
       Gem.finish_resolve
 
-      assert_equal %w(a-1 b-2 c-2), loaded_spec_names
+      assert_equal %w[a-1 b-2 c-2], loaded_spec_names
       assert_equal [], unresolved_names
     end
   end
@@ -66,12 +66,12 @@ class TestGem < Gem::TestCase
 
       a1.activate
 
-      assert_equal %w(a-1), loaded_spec_names
+      assert_equal %w[a-1], loaded_spec_names
       assert_equal ["b (> 0)", "d (> 0)"], unresolved_names
 
       Gem.finish_resolve
 
-      assert_equal %w(a-1 b-1 c-1 d-2), loaded_spec_names
+      assert_equal %w[a-1 b-1 c-1 d-2], loaded_spec_names
       assert_equal [], unresolved_names
     end
   end
@@ -89,12 +89,12 @@ class TestGem < Gem::TestCase
       a1.activate
       c1.activate
 
-      assert_equal %w(a-1 c-1), loaded_spec_names
+      assert_equal %w[a-1 c-1], loaded_spec_names
       assert_equal ["b (> 0)"], unresolved_names
 
       Gem.finish_resolve
 
-      assert_equal %w(a-1 b-1 c-1), loaded_spec_names
+      assert_equal %w[a-1 b-1 c-1], loaded_spec_names
       assert_equal [], unresolved_names
     end
   end
@@ -299,7 +299,7 @@ class TestGem < Gem::TestCase
     gem 'c'
     Gem.finish_resolve
 
-    assert_equal %w(a-1 b-2 c-1), loaded_spec_names
+    assert_equal %w[a-1 b-2 c-1], loaded_spec_names
   end
 
   def test_activate_bin_path_gives_proper_error_for_bundler
@@ -368,7 +368,7 @@ class TestGem < Gem::TestCase
 
     load Gem.activate_bin_path("bundler", "bundle", ">= 0.a")
 
-    assert_equal %w(bundler-2.0.0), loaded_spec_names
+    assert_equal %w[bundler-2.0.0], loaded_spec_names
   end
 
   def test_activate_bin_path_respects_underscore_selection_if_given
@@ -402,7 +402,7 @@ class TestGem < Gem::TestCase
 
     load Gem.activate_bin_path("bundler", "bundle", "= 1.17.3")
 
-    assert_equal %w(bundler-1.17.3), loaded_spec_names
+    assert_equal %w[bundler-1.17.3], loaded_spec_names
   end
 
   def test_self_bin_path_no_exec_name
@@ -649,7 +649,7 @@ class TestGem < Gem::TestCase
     assert_directory_exists util_cache_dir
   end
 
-  unless win_platform? || Process.uid.zero?  # only for FS that support write protection
+  unless win_platform? || Process.uid.zero? # only for FS that support write protection
     def test_self_ensure_gem_directories_write_protected
       gemdir = File.join @tempdir, "egd"
       FileUtils.rm_r gemdir rescue nil
@@ -701,7 +701,7 @@ class TestGem < Gem::TestCase
 
     discover_path = File.join 'lib', 'sff', 'discover.rb'
 
-    foo1, foo2 = %w(1 2).map do |version|
+    foo1, foo2 = %w[1 2].map do |version|
       spec = quick_gem 'sff', version do |s|
         s.files << discover_path
       end
@@ -733,7 +733,7 @@ class TestGem < Gem::TestCase
 
     discover_path = File.join 'lib', 'sff', 'discover.rb'
 
-    foo1, _ = %w(1 2).map do |version|
+    foo1, _ = %w[1 2].map do |version|
       spec = quick_gem 'sff', version do |s|
         s.files << discover_path
       end
@@ -769,7 +769,7 @@ class TestGem < Gem::TestCase
 
     discover_path = File.join 'lib', 'sff', 'discover.rb'
 
-    _, foo2 = %w(1 2).map do |version|
+    _, foo2 = %w[1 2].map do |version|
       spec = quick_gem 'sff', version do |s|
         s.files << discover_path
       end
@@ -1016,16 +1016,16 @@ class TestGem < Gem::TestCase
   end
 
   def test_self_ruby_escaping_spaces_in_path
-    with_bindir_and_exeext("C:/Ruby 1.8/bin", ".exe") do
-      ruby_install_name "ruby" do
+    with_clean_path_to_ruby do
+      with_rb_config_ruby("C:/Ruby 1.8/bin/ruby.exe") do
         assert_equal "\"C:/Ruby 1.8/bin/ruby.exe\"", Gem.ruby
       end
     end
   end
 
   def test_self_ruby_path_without_spaces
-    with_bindir_and_exeext("C:/Ruby18/bin", ".exe") do
-      ruby_install_name "ruby" do
+    with_clean_path_to_ruby do
+      with_rb_config_ruby("C:/Ruby18/bin/ruby.exe") do
         assert_equal "C:/Ruby18/bin/ruby.exe", Gem.ruby
       end
     end
@@ -1259,7 +1259,7 @@ class TestGem < Gem::TestCase
       Gem.try_activate 'a_file'
     end
 
-    assert_match %r%Could not find 'b' %, e.message
+    assert_match %r{Could not find 'b' }, e.message
   end
 
   def test_self_try_activate_missing_prerelease
@@ -1279,7 +1279,7 @@ class TestGem < Gem::TestCase
       Gem.try_activate 'a_file'
     end
 
-    assert_match %r%Could not find 'b' \(= 1.0rc1\)%, e.message
+    assert_match %r{Could not find 'b' \(= 1.0rc1\)}, e.message
   end
 
   def test_self_try_activate_missing_extensions
@@ -1384,7 +1384,7 @@ class TestGem < Gem::TestCase
 
     activated = Gem::Specification.map { |x| x.full_name }
 
-    assert_equal %w!a-1 b-1 c-2!, activated.sort
+    assert_equal %w[a-1 b-1 c-2], activated.sort
   end
 
   def test_self_needs_picks_up_unresolved_deps
@@ -1404,7 +1404,7 @@ class TestGem < Gem::TestCase
         require "d#{$$}"
       end
 
-      assert_equal %w!a-1 b-1 c-2 d-1 e-1!, loaded_spec_names
+      assert_equal %w[a-1 b-1 c-2 d-1 e-1], loaded_spec_names
     end
   end
 
@@ -1596,7 +1596,7 @@ class TestGem < Gem::TestCase
 
     Gem.use_gemdeps
 
-    assert_equal add_bundler_full_name(%W(a-1 b-1 c-1)), loaded_spec_names
+    assert_equal add_bundler_full_name(%W[a-1 b-1 c-1]), loaded_spec_names
   end
 
   def test_auto_activation_of_used_gemdeps_file
@@ -1750,7 +1750,7 @@ class TestGem < Gem::TestCase
 
     Gem.use_gemdeps gem_deps_file
 
-    assert_equal add_bundler_full_name(%W(a-1)), loaded_spec_names
+    assert_equal add_bundler_full_name(%W[a-1]), loaded_spec_names
     refute_nil Gem.gemdeps
   end
 
@@ -1810,7 +1810,7 @@ class TestGem < Gem::TestCase
 
     Gem.use_gemdeps
 
-    assert_equal add_bundler_full_name(%W(a-1)), loaded_spec_names
+    assert_equal add_bundler_full_name(%W[a-1]), loaded_spec_names
   ensure
     ENV['RUBYGEMS_GEMDEPS'] = rubygems_gemdeps
   end
@@ -1887,7 +1887,7 @@ You may need to `gem install -g` to install missing gems
 
     Gem.use_gemdeps
 
-    assert_equal add_bundler_full_name(%W(a-1)), loaded_spec_names
+    assert_equal add_bundler_full_name(%W[a-1]), loaded_spec_names
   ensure
     ENV['RUBYGEMS_GEMDEPS'] = rubygems_gemdeps
   end
@@ -1904,6 +1904,24 @@ You may need to `gem install -g` to install missing gems
 
     assert platform_defaults != nil
     assert platform_defaults.is_a? Hash
+  end
+
+  # Ensure that `Gem.source_date_epoch` is consistent even if
+  # $SOURCE_DATE_EPOCH has not been set.
+  def test_default_source_date_epoch_doesnt_change
+    old_epoch = ENV['SOURCE_DATE_EPOCH']
+    ENV['SOURCE_DATE_EPOCH'] = nil
+
+    # Unfortunately, there is no real way to test this aside from waiting
+    # enough for `Time.now.to_i` to change -- which is a whole second.
+    #
+    # Fortunately, we only need to do this once.
+    a = Gem.source_date_epoch
+    sleep 1
+    b = Gem.source_date_epoch
+    assert_equal a, b
+  ensure
+    ENV['SOURCE_DATE_EPOCH'] = old_epoch
   end
 
   def ruby_install_name(name)
@@ -1923,11 +1941,24 @@ You may need to `gem install -g` to install missing gems
     end
   end
 
-  def with_bindir_and_exeext(bindir, exeext)
-    bindir(bindir) do
-      exeext(exeext) do
-        yield
-      end
+  def with_rb_config_ruby(path)
+    rb_config_singleton_class = class << RbConfig; self; end
+    orig_path = RbConfig.ruby
+
+    redefine_method(rb_config_singleton_class, :ruby, path)
+
+    yield
+  ensure
+    redefine_method(rb_config_singleton_class, :ruby, orig_path)
+  end
+
+  def redefine_method(base, method, new_result)
+    if RUBY_VERSION >= "2.5"
+      base.alias_method(method, method)
+      base.define_method(method) { new_result }
+    else
+      base.send(:alias_method, method, method)
+      base.send(:define_method, method) { new_result }
     end
   end
 

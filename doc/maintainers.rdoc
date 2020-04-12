@@ -52,12 +52,6 @@ Zachary Scott (zzak)
   Kazuki Tsujimoto (ktsj)
 [lib/mkmf.rb]
   _unmaintained_
-[lib/net/ftp.rb]
-  Shugo Maeda (shugo)
-[lib/net/imap.rb]
-  Shugo Maeda (shugo)
-[lib/net/http.rb, lib/net/https.rb]
-  NARUSE, Yui (naruse)
 [lib/open-uri.rb]
   Tanaka Akira (akr)
 [lib/optparse.rb, lib/optparse/*]
@@ -136,7 +130,7 @@ Zachary Scott (zzak)
   https://rubygems.org/gems/benchmark
 [lib/bundler.rb, lib/bundler/*]
   Hiroshi SHIBATA (hsbt)
-  https://github.com/rubygems/bundler
+  https://github.com/rubygems/rubygems
   https://rubygems.org/gems/bundler
 [lib/cgi.rb, lib/cgi/*]
   Takeyuki Fujioka (xibbar)
@@ -188,6 +182,15 @@ Zachary Scott (zzak)
   Keiju ISHITSUKA (keiju)
   https://github.com/ruby/mutex_m
   https://rubygems.org/gems/mutex_m
+[lib/net/ftp.rb]
+  Shugo Maeda (shugo)
+  https://github.com/ruby/net-ftp
+[lib/net/http.rb, lib/net/https.rb]
+  NARUSE, Yui (naruse)
+  https://github.com/ruby/net-http
+[lib/net/imap.rb]
+  Shugo Maeda (shugo)
+  https://github.com/ruby/net-imap
 [lib/net/pop.rb]
   _unmaintained_
   https://github.com/ruby/net-pop

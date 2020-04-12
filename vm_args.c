@@ -27,7 +27,7 @@ struct args_info {
     /* additional args info */
     int rest_index;
     int rest_dupped;
-    const struct rb_call_info_kw_arg *kw_arg;
+    const struct rb_callinfo_kwarg *kw_arg;
     VALUE *kw_argv;
     VALUE rest;
 };
@@ -190,7 +190,7 @@ args_rest_array(struct args_info *args)
 static int
 args_kw_argv_to_hash(struct args_info *args)
 {
-    const struct rb_call_info_kw_arg *kw_arg = args->kw_arg;
+    const struct rb_callinfo_kwarg *kw_arg = args->kw_arg;
     const VALUE *const passed_keywords = kw_arg->keywords;
     const int kw_len = kw_arg->keyword_len;
     VALUE h = rb_hash_new_with_size(kw_len);
@@ -400,9 +400,15 @@ args_setup_kw_parameters(rb_execution_context_t *const ec, const rb_iseq_t *cons
 }
 
 static inline void
-args_setup_kw_rest_parameter(VALUE keyword_hash, VALUE *locals)
+args_setup_kw_rest_parameter(VALUE keyword_hash, VALUE *locals, int kw_flag)
 {
-    locals[0] = NIL_P(keyword_hash) ? rb_hash_new() : rb_hash_dup(keyword_hash);
+    if (NIL_P(keyword_hash)) {
+        keyword_hash = rb_hash_new();
+    }
+    else if (!(kw_flag & VM_CALL_KW_SPLAT_MUT)) {
+        keyword_hash = rb_hash_dup(keyword_hash);
+    }
+    locals[0] = keyword_hash;
 }
 
 static inline void
@@ -429,30 +435,40 @@ fill_keys_values(st_data_t key, st_data_t val, st_data_t ptr)
 }
 
 static inline int
-ignore_keyword_hash_p(VALUE keyword_hash, const rb_iseq_t * const iseq)
+ignore_keyword_hash_p(VALUE keyword_hash, const rb_iseq_t * const iseq, unsigned int * kw_flag, VALUE * converted_keyword_hash)
 {
+    if (!RB_TYPE_P(keyword_hash, T_HASH)) {
+        keyword_hash = rb_to_hash_type(keyword_hash);
+    }
+    if (!(*kw_flag & VM_CALL_KW_SPLAT_MUT) &&
+            (iseq->body->param.flags.has_kwrest ||
+             iseq->body->param.flags.ruby2_keywords)) {
+        *kw_flag |= VM_CALL_KW_SPLAT_MUT;
+        keyword_hash = rb_hash_dup(keyword_hash);
+    }
+    *converted_keyword_hash = keyword_hash;
     return !(iseq->body->param.flags.has_kw) &&
            !(iseq->body->param.flags.has_kwrest) &&
-           RB_TYPE_P(keyword_hash, T_HASH) &&
            RHASH_EMPTY_P(keyword_hash);
 }
 
 static int
 setup_parameters_complex(rb_execution_context_t * const ec, const rb_iseq_t * const iseq,
 			 struct rb_calling_info *const calling,
-			 const struct rb_call_info *ci,
-			 VALUE * const locals, const enum arg_setup_type arg_setup_type)
+                         const struct rb_callinfo *ci,
+                         VALUE * const locals, const enum arg_setup_type arg_setup_type)
 {
     const int min_argc = iseq->body->param.lead_num + iseq->body->param.post_num;
     const int max_argc = (iseq->body->param.flags.has_rest == FALSE) ? min_argc + iseq->body->param.opt_num : UNLIMITED_ARGUMENTS;
     int given_argc;
-    unsigned int kw_flag = ci->flag & (VM_CALL_KWARG | VM_CALL_KW_SPLAT);
+    unsigned int kw_flag = vm_ci_flag(ci) & (VM_CALL_KWARG | VM_CALL_KW_SPLAT | VM_CALL_KW_SPLAT_MUT);
     int opt_pc = 0, allow_autosplat = !kw_flag;
     struct args_info args_body, *args;
     VALUE keyword_hash = Qnil;
     VALUE * const orig_sp = ec->cfp->sp;
     unsigned int i;
     VALUE flag_keyword_hash = 0;
+    VALUE converted_keyword_hash = 0;
 
     vm_check_canary(ec, orig_sp);
     /*
@@ -481,7 +497,7 @@ setup_parameters_complex(rb_execution_context_t * const ec, const rb_iseq_t * co
     args->rest_dupped = FALSE;
 
     if (kw_flag & VM_CALL_KWARG) {
-	args->kw_arg = ((struct rb_call_info_with_kwarg *)ci)->kw_arg;
+	args->kw_arg = vm_ci_kwarg(ci);
 
 	if (iseq->body->param.flags.has_kw) {
 	    int kw_len = args->kw_arg->keyword_len;
@@ -494,7 +510,7 @@ setup_parameters_complex(rb_execution_context_t * const ec, const rb_iseq_t * co
 	else {
 	    args->kw_argv = NULL;
 	    given_argc = args_kw_argv_to_hash(args);
-	    kw_flag |= VM_CALL_KW_SPLAT;
+            kw_flag |= VM_CALL_KW_SPLAT | VM_CALL_KW_SPLAT_MUT;
 	}
     }
     else {
@@ -502,7 +518,7 @@ setup_parameters_complex(rb_execution_context_t * const ec, const rb_iseq_t * co
 	args->kw_argv = NULL;
     }
 
-    if (ci->flag & VM_CALL_ARGS_SPLAT) {
+    if (vm_ci_flag(ci) & VM_CALL_ARGS_SPLAT) {
         VALUE rest_last = 0;
         int len;
 	args->rest = locals[--args->argc];
@@ -515,7 +531,7 @@ setup_parameters_complex(rb_execution_context_t * const ec, const rb_iseq_t * co
             if (RB_TYPE_P(rest_last, T_HASH) &&
                 (((struct RHash *)rest_last)->basic.flags & RHASH_PASS_AS_KEYWORDS)) {
                 rest_last = rb_hash_dup(rest_last);
-                kw_flag |= VM_CALL_KW_SPLAT;
+                kw_flag |= VM_CALL_KW_SPLAT | VM_CALL_KW_SPLAT_MUT;
             }
             else {
                 rest_last = 0;
@@ -523,38 +539,53 @@ setup_parameters_complex(rb_execution_context_t * const ec, const rb_iseq_t * co
         }
 
         if (kw_flag & VM_CALL_KW_SPLAT) {
-            if (len > 0 && ignore_keyword_hash_p(rest_last, iseq)) {
+            if (ignore_keyword_hash_p(rest_last, iseq, &kw_flag, &converted_keyword_hash)) {
                 arg_rest_dup(args);
                 rb_ary_pop(args->rest);
                 given_argc--;
-                kw_flag &= ~VM_CALL_KW_SPLAT;
+                kw_flag &= ~(VM_CALL_KW_SPLAT | VM_CALL_KW_SPLAT_MUT);
 	    }
-            else if (iseq->body->param.flags.ruby2_keywords && rest_last) {
-                flag_keyword_hash = rest_last;
-            }
-            else if (iseq->body->param.flags.has_kw || iseq->body->param.flags.has_kwrest) {
-                arg_rest_dup(args);
-                rb_ary_pop(args->rest);
-                given_argc--;
-                keyword_hash = rest_last;
+            else {
+                if (rest_last != converted_keyword_hash) {
+                    rest_last = converted_keyword_hash;
+                    arg_rest_dup(args);
+                    RARRAY_ASET(args->rest, len - 1, rest_last);
+                }
+
+                if (iseq->body->param.flags.ruby2_keywords && rest_last) {
+                    flag_keyword_hash = rest_last;
+                }
+                else if (iseq->body->param.flags.has_kw || iseq->body->param.flags.has_kwrest) {
+                    arg_rest_dup(args);
+                    rb_ary_pop(args->rest);
+                    given_argc--;
+                    keyword_hash = rest_last;
+                }
             }
         }
     }
     else {
         if (kw_flag & VM_CALL_KW_SPLAT) {
             VALUE last_arg = args->argv[args->argc-1];
-            if (ignore_keyword_hash_p(last_arg, iseq)) {
+            if (ignore_keyword_hash_p(last_arg, iseq, &kw_flag, &converted_keyword_hash)) {
                 args->argc--;
                 given_argc--;
-                kw_flag &= ~VM_CALL_KW_SPLAT;
+                kw_flag &= ~(VM_CALL_KW_SPLAT | VM_CALL_KW_SPLAT_MUT);
 	    }
-            else if (iseq->body->param.flags.ruby2_keywords) {
-                flag_keyword_hash = last_arg;
-            }
-            else if (iseq->body->param.flags.has_kw || iseq->body->param.flags.has_kwrest) {
-                args->argc--;
-                given_argc--;
-                keyword_hash = last_arg;
+            else {
+                if (last_arg != converted_keyword_hash) {
+                    last_arg = converted_keyword_hash;
+                    args->argv[args->argc-1] = last_arg;
+                }
+
+                if (iseq->body->param.flags.ruby2_keywords) {
+                    flag_keyword_hash = last_arg;
+                }
+                else if (iseq->body->param.flags.has_kw || iseq->body->param.flags.has_kwrest) {
+                    args->argc--;
+                    given_argc--;
+                    keyword_hash = last_arg;
+                }
             }
         }
 	args->rest = Qfalse;
@@ -568,14 +599,14 @@ setup_parameters_complex(rb_execution_context_t * const ec, const rb_iseq_t * co
 	rb_raise(rb_eArgError, "no keywords accepted");
     }
 
+
     switch (arg_setup_type) {
       case arg_setup_method:
 	break; /* do nothing special */
       case arg_setup_block:
         if (given_argc == (keyword_hash == Qnil ? 1 : 2) &&
             allow_autosplat &&
-	    (min_argc > 0 || iseq->body->param.opt_num > 1 ||
-	     iseq->body->param.flags.has_kw || iseq->body->param.flags.has_kwrest) &&
+            (min_argc > 0 || iseq->body->param.opt_num > 1) &&
 	    !iseq->body->param.flags.ambiguous_param0 &&
 	    args_check_block_arg0(args)) {
 	    given_argc = RARRAY_LENINT(args->rest);
@@ -631,7 +662,7 @@ setup_parameters_complex(rb_execution_context_t * const ec, const rb_iseq_t * co
 	VALUE * const klocals = locals + iseq->body->param.keyword->bits_start - iseq->body->param.keyword->num;
 
 	if (args->kw_argv != NULL) {
-	    const struct rb_call_info_kw_arg *kw_arg = args->kw_arg;
+	    const struct rb_callinfo_kwarg *kw_arg = args->kw_arg;
 	    args_setup_kw_parameters(ec, iseq, args->kw_argv, kw_arg->keyword_len, kw_arg->keywords, klocals);
 	}
 	else if (!NIL_P(keyword_hash)) {
@@ -651,7 +682,7 @@ setup_parameters_complex(rb_execution_context_t * const ec, const rb_iseq_t * co
 	}
     }
     else if (iseq->body->param.flags.has_kwrest) {
-	args_setup_kw_rest_parameter(keyword_hash, locals + iseq->body->param.keyword->rest_start);
+        args_setup_kw_rest_parameter(keyword_hash, locals + iseq->body->param.keyword->rest_start, kw_flag);
     }
     else if (!NIL_P(keyword_hash) && RHASH_SIZE(keyword_hash) > 0 && arg_setup_type == arg_setup_method) {
 	argument_kw_error(ec, iseq, "unknown", rb_hash_keys(keyword_hash));
@@ -759,11 +790,10 @@ vm_caller_setup_arg_splat(rb_control_frame_t *cfp, struct rb_calling_info *calli
 }
 
 static inline void
-vm_caller_setup_arg_kw(rb_control_frame_t *cfp, struct rb_calling_info *calling, const struct rb_call_info *ci)
+vm_caller_setup_arg_kw(rb_control_frame_t *cfp, struct rb_calling_info *calling, const struct rb_callinfo *ci)
 {
-    struct rb_call_info_with_kwarg *ci_kw = (struct rb_call_info_with_kwarg *)ci;
-    const VALUE *const passed_keywords = ci_kw->kw_arg->keywords;
-    const int kw_len = ci_kw->kw_arg->keyword_len;
+    const VALUE *const passed_keywords = vm_ci_kwarg(ci)->keywords;
+    const int kw_len = vm_ci_kwarg(ci)->keyword_len;
     const VALUE h = rb_hash_new_with_size(kw_len);
     VALUE *sp = cfp->sp;
     int i;
@@ -844,9 +874,9 @@ refine_sym_proc_call(RB_BLOCK_CALL_FUNC_ARGLIST(yielded_arg, callback_arg))
 
 static VALUE
 vm_caller_setup_arg_block(const rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
-                          const struct rb_call_info *ci, const rb_iseq_t *blockiseq, const int is_super)
+                          const struct rb_callinfo *ci, const rb_iseq_t *blockiseq, const int is_super)
 {
-    if (ci->flag & VM_CALL_ARGS_BLOCKARG) {
+    if (vm_ci_flag(ci) & VM_CALL_ARGS_BLOCKARG) {
 	VALUE block_code = *(--reg_cfp->sp);
 
 	if (NIL_P(block_code)) {
@@ -869,7 +899,7 @@ vm_caller_setup_arg_block(const rb_execution_context_t *ec, rb_control_frame_t *
                     rb_ary_push(callback_arg, block_code);
                     rb_ary_push(callback_arg, ref);
                     OBJ_FREEZE_RAW(callback_arg);
-                    func = rb_func_proc_new(refine_sym_proc_call, callback_arg);
+                    func = rb_func_lambda_new(refine_sym_proc_call, callback_arg, 1, UNLIMITED_ARGUMENTS);
 		    rb_hash_aset(ref, block_code, func);
 		}
 		block_code = func;

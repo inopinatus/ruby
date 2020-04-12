@@ -667,7 +667,7 @@ bind_location(VALUE bindval)
 }
 
 static VALUE
-cfunc_proc_new(VALUE klass, VALUE ifunc, int8_t is_lambda)
+cfunc_proc_new(VALUE klass, VALUE ifunc)
 {
     rb_proc_t *proc;
     cfunc_proc_t *sproc;
@@ -685,7 +685,7 @@ cfunc_proc_new(VALUE klass, VALUE ifunc, int8_t is_lambda)
 
     /* self? */
     RB_OBJ_WRITE(procval, &proc->block.as.captured.code.ifunc, ifunc);
-    proc->is_lambda = is_lambda;
+    proc->is_lambda = TRUE;
     return procval;
 }
 
@@ -697,6 +697,7 @@ sym_proc_new(VALUE klass, VALUE sym)
     GetProcPtr(procval, proc);
 
     vm_block_type_set(&proc->block, block_type_symbol);
+    proc->is_lambda = TRUE;
     RB_OBJ_WRITE(procval, &proc->block.as.symbol, sym);
     return procval;
 }
@@ -735,14 +736,14 @@ MJIT_FUNC_EXPORTED VALUE
 rb_func_proc_new(rb_block_call_func_t func, VALUE val)
 {
     struct vm_ifunc *ifunc = rb_vm_ifunc_proc_new(func, (void *)val);
-    return cfunc_proc_new(rb_cProc, (VALUE)ifunc, 0);
+    return cfunc_proc_new(rb_cProc, (VALUE)ifunc);
 }
 
-VALUE
+MJIT_FUNC_EXPORTED VALUE
 rb_func_lambda_new(rb_block_call_func_t func, VALUE val, int min_argc, int max_argc)
 {
     struct vm_ifunc *ifunc = rb_vm_ifunc_new(func, (void *)val, min_argc, max_argc);
-    return cfunc_proc_new(rb_cProc, (VALUE)ifunc, 1);
+    return cfunc_proc_new(rb_cProc, (VALUE)ifunc);
 }
 
 static const char proc_without_block[] = "tried to create Proc object without a block";
@@ -1090,7 +1091,8 @@ rb_vm_block_min_max_arity(const struct rb_block *block, int *max)
 	    return ifunc->argc.min;
 	}
       case block_type_symbol:
-	break;
+        *max = UNLIMITED_ARGUMENTS;
+        return 1;
     }
     *max = UNLIMITED_ARGUMENTS;
     return 0;
@@ -1143,6 +1145,41 @@ block_setup(struct rb_block *block, VALUE block_handler)
 }
 
 int
+rb_block_pair_yield_optimizable(void)
+{
+    int min, max;
+    const rb_execution_context_t *ec = GET_EC();
+    rb_control_frame_t *cfp = ec->cfp;
+    VALUE block_handler = rb_vm_frame_block_handler(cfp);
+    struct rb_block block;
+
+    if (block_handler == VM_BLOCK_HANDLER_NONE) {
+	rb_raise(rb_eArgError, "no block given");
+    }
+
+    block_setup(&block, block_handler);
+    min = rb_vm_block_min_max_arity(&block, &max);
+
+    switch (vm_block_type(&block)) {
+      case block_handler_type_symbol:
+        return 0;
+
+      case block_handler_type_proc:
+	{
+	    VALUE procval = block_handler;
+	    rb_proc_t *proc;
+	    GetProcPtr(procval, proc);
+            if (proc->is_lambda) return 0;
+            if (min != max) return 0;
+            return min > 1;
+	}
+
+      default:
+        return min > 1;
+    }
+}
+
+int
 rb_block_arity(void)
 {
     int min, max;
@@ -1168,7 +1205,6 @@ rb_block_arity(void)
 	    rb_proc_t *proc;
 	    GetProcPtr(procval, proc);
 	    return (proc->is_lambda ? min == max : max != UNLIMITED_ARGUMENTS) ? min : -min-1;
-	    /* fall through */
 	}
 
       default:
@@ -1621,8 +1657,8 @@ method_entry_defined_class(const rb_method_entry_t *me)
  *   meth == other_meth  -> true or false
  *
  * Two method objects are equal if they are bound to the same
- * object and refer to the same method definition and their owners are the
- * same class or module.
+ * object and refer to the same method definition and the classes
+ * defining the methods are the same class or module.
  */
 
 static VALUE
@@ -1791,6 +1827,9 @@ rb_method_name_error(VALUE klass, VALUE str)
 	  case T_CLASS:
 	    c = obj;
 	    s = MSG("");
+            break;
+          default:
+	    break;
 	}
 	goto normal_class;
     }
@@ -2810,7 +2849,8 @@ method_inspect(VALUE method)
     TypedData_Get_Struct(method, struct METHOD, &method_data_type, data);
     str = rb_sprintf("#<% "PRIsVALUE": ", rb_obj_class(method));
 
-    mklass = data->klass;
+    mklass = data->iclass;
+    if (!mklass) mklass = data->klass;
 
     if (RB_TYPE_P(mklass, T_ICLASS)) {
         /* TODO: I'm not sure why mklass is T_ICLASS.
@@ -2850,6 +2890,12 @@ method_inspect(VALUE method)
 	}
     }
     else {
+        mklass = data->klass;
+        if (FL_TEST(mklass, FL_SINGLETON)) {
+            do {
+               mklass = RCLASS_SUPER(mklass);
+            } while (RB_TYPE_P(mklass, T_ICLASS));
+        }
 	rb_str_buf_append(str, rb_inspect(mklass));
 	if (defined_class != mklass) {
 	    rb_str_catf(str, "(% "PRIsVALUE")", defined_class);

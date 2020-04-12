@@ -3,7 +3,6 @@
 # = uri/common.rb
 #
 # Author:: Akira Yamada <akira@ruby-lang.org>
-# Revision:: $Id$
 # License::
 #   You can redistribute it and/or modify it under the same term as Ruby.
 #
@@ -143,6 +142,20 @@ module URI
   # Returns a Hash of the defined schemes.
   def self.scheme_list
     @@schemes
+  end
+
+  #
+  # Construct a URI instance, using the scheme to detect the appropriate class
+  # from +URI.scheme_list+.
+  #
+  def self.for(scheme, *arguments, default: Generic)
+    if scheme
+      uri_class = @@schemes[scheme.upcase] || default
+    else
+      uri_class = default
+    end
+
+    return uri_class.new(scheme, *arguments)
   end
 
   #

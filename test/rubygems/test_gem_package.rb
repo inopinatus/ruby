@@ -106,7 +106,7 @@ class TestGemPackage < Gem::Package::TarTestCase
     assert_equal expected, YAML.load(checksums)
   end
 
-  def test_build_time_source_date_epoch
+  def test_build_time_uses_source_date_epoch
     epoch = ENV["SOURCE_DATE_EPOCH"]
     ENV["SOURCE_DATE_EPOCH"] = "123456789"
 
@@ -124,11 +124,9 @@ class TestGemPackage < Gem::Package::TarTestCase
     ENV["SOURCE_DATE_EPOCH"] = epoch
   end
 
-  def test_build_time_source_date_epoch_automatically_set
+  def test_build_time_without_source_date_epoch
     epoch = ENV["SOURCE_DATE_EPOCH"]
     ENV["SOURCE_DATE_EPOCH"] = nil
-
-    start_time = Time.now.utc.to_i
 
     spec = Gem::Specification.new 'build', '1'
     spec.summary = 'build'
@@ -138,14 +136,11 @@ class TestGemPackage < Gem::Package::TarTestCase
 
     package = Gem::Package.new spec.file_name
 
-    end_time = Time.now.utc.to_i
-
     assert_kind_of Time, package.build_time
 
     build_time = package.build_time.to_i
 
-    assert_operator(start_time, :<=, build_time)
-    assert_operator(build_time, :<=, end_time)
+    assert_equal Gem.source_date_epoch.to_i, build_time
   ensure
     ENV["SOURCE_DATE_EPOCH"] = epoch
   end
@@ -156,7 +151,7 @@ class TestGemPackage < Gem::Package::TarTestCase
 
     FileUtils.mkdir_p 'lib/empty'
 
-    File.open 'lib/code.rb',  'w' do |io|
+    File.open 'lib/code.rb', 'w' do |io|
       io.write '# lib/code.rb'
     end
 
@@ -190,7 +185,7 @@ class TestGemPackage < Gem::Package::TarTestCase
 
     FileUtils.mkdir_p 'lib'
 
-    File.open 'lib/code.rb',  'w' do |io|
+    File.open 'lib/code.rb', 'w' do |io|
       io.write '# lib/code.rb'
     end
 
@@ -541,11 +536,11 @@ class TestGemPackage < Gem::Package::TarTestCase
     package = Gem::Package.new @gem
 
     tgz_io = util_tar_gz do |tar|
-      tar.add_file    'relative.rb', 0644 do |io|
+      tar.add_file 'relative.rb', 0644 do |io|
         io.write 'hi'
       end
 
-      tar.mkdir       'lib',         0755
+      tar.mkdir       'lib', 0755
       tar.add_symlink 'lib/foo.rb', '../relative.rb', 0644
     end
 
@@ -640,7 +635,7 @@ class TestGemPackage < Gem::Package::TarTestCase
       tar.add_file 'lib/foo.rb', 0644 do |io|
         io.write 'hi'
       end
-      tar.mkdir    'lib/foo',    0755
+      tar.mkdir    'lib/foo', 0755
     end
 
     package.extract_tar_gz tgz_io, @destination
@@ -934,8 +929,8 @@ class TestGemPackage < Gem::Package::TarTestCase
       package.verify
     end
 
-    assert_match %r%^No such file or directory%, e.message
-    assert_match %r%nonexistent.gem$%,           e.message
+    assert_match %r{^No such file or directory}, e.message
+    assert_match %r{nonexistent.gem$},           e.message
   end
 
   def test_verify_duplicate_file
@@ -1102,7 +1097,7 @@ class TestGemPackage < Gem::Package::TarTestCase
       $bad_name = vm
 
       entry = Object.new
-      def entry.full_name() $bad_name  end
+      def entry.full_name() $bad_name end
 
       package = Gem::Package.new(@gem)
       package.instance_variable_set(:@files, [])

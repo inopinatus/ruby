@@ -271,7 +271,7 @@ require "irb/easter-egg"
 # On the other hand, each conf in IRB@Command+line+options is used to
 # individually configure IRB.irb.
 #
-# If a proc is set for IRB.conf[:IRB_RC], its will be invoked after execution
+# If a proc is set for <code>IRB.conf[:IRB_RC]</code>, its will be invoked after execution
 # of that proc with the context of the current session as its argument. Each
 # session can be configured using this mechanism.
 #
@@ -399,7 +399,7 @@ module IRB
     irb.run(@CONF)
   end
 
-  # Calls each event hook of IRB.conf[:AT_EXIT] when the current session quits.
+  # Calls each event hook of <code>IRB.conf[:TA_EXIT]</code> when the current session quits.
   def IRB.irb_at_exit
     @CONF[:AT_EXIT].each{|hook| hook.call}
   end
@@ -554,7 +554,8 @@ module IRB
 
     def handle_exception(exc)
       if exc.backtrace && exc.backtrace[0] =~ /\/irb(2)?(\/.*|-.*|\.rb)?:/ && exc.class.to_s !~ /^IRB/ &&
-         !(SyntaxError === exc)
+         !(SyntaxError === exc) && !(EncodingError === exc)
+        # The backtrace of invalid encoding hash (ex. {"\xAE": 1}) raises EncodingError without lineno.
         irb_bug = true
       else
         irb_bug = false
@@ -738,7 +739,7 @@ module IRB
 
     def output_value # :nodoc:
       str = @context.inspect_last_value
-      multiline_p = /\A.*\Z/ !~ str
+      multiline_p = str.include?("\n")
       if multiline_p && @context.newline_before_multiline_output?
         printf @context.return_format, "\n#{str}"
       else

@@ -1,6 +1,5 @@
 # -*- mode: makefile-gmake; indent-tabs-mode: t -*-
 
-gnumake = yes
 override gnumake_recursive := $(if $(findstring n,$(firstword $(MFLAGS))),,+)
 override mflags := $(filter-out -j%,$(MFLAGS))
 MSPECOPT += $(if $(filter -j%,$(MFLAGS)),-j)
@@ -243,15 +242,42 @@ HELP_EXTRA_TASKS = \
 	"  update-github:       merge master branch and push it to Pull Request [PR=1234]" \
 	""
 
-ifneq ($(filter refresh-gems,$(MAKECMDGOALS)),)
 extract-gems: update-gems
+
+BUNDLED_GEMS := $(shell sed 's/[ 	][ 	]*/-/;s/[ 	].*//' $(srcdir)/gems/bundled_gems)
+
+update-gems: | $(patsubst %,gems/%.gem,$(BUNDLED_GEMS))
+
+test-bundler-precheck: | $(srcdir)/.bundle/cache
+
+$(srcdir)/.bundle/cache:
+	$(MAKEDIRS) $(@D) $(CACHE_DIR)
+	$(LN_S) ../.downloaded-cache $@
+
+gems/%.gem:
+	$(ECHO) Downloading bundled gem $*...
+	$(Q) $(BASERUBY) -C "$(srcdir)" \
+	    -I./tool -rdownloader \
+	    -e 'gem = "$(@F)"' \
+	    -e 'old = Dir.glob("gems/"+gem.sub(/-[^-]*$$/, "-*.gem"))' \
+	    -e 'Downloader::RubyGems.download(gem, "gems", nil) and' \
+	    -e '(old.delete("gems/#{gem}"); !old.empty?) and' \
+	    -e 'File.unlink(*old) and' \
+	    -e 'FileUtils.rm_rf(old.map{'"|n|"'n.chomp(".gem")})'
+
+extract-gems: | $(patsubst %,.bundle/gems/%,$(BUNDLED_GEMS))
+
+.bundle/gems/%: gems/%.gem | .bundle/gems
+	$(ECHO) Extracting bundle gem $*...
+	$(Q) $(BASERUBY) -C "$(srcdir)" \
+	    -Itool -rgem-unpack \
+	    -e 'Gem.unpack("gems/$(@F).gem", ".bundle/gems")'
+
+$(srcdir)/.bundle/gems:
+	$(MAKEDIRS) $@
+
+ifneq ($(filter update-bundled_gems refresh-gems,$(MAKECMDGOALS)),)
 update-gems: update-bundled_gems
-endif
-ifneq ($(filter extract-gems,$(MAKECMDGOALS)),)
-extract-gems: $(filter update-gems update-bundled_gems,$(MAKECMDGOALS))
-endif
-ifneq ($(filter update-gems,$(MAKECMDGOALS)),)
-update-gems: $(filter update-bundled_gems,$(MAKECMDGOALS))
 endif
 
 ifeq ($(filter 0 1,$(words $(arch_flags))),)
@@ -330,7 +356,7 @@ clean-srcs-extra::
 
 ifneq ($(filter $(VCS),git),)
 update-src::
-	@$(BASERUBY) $(srcdir)/tool/lib/colorize.rb pass "Latest commit hash = $(shell $(filter-out svn,$(VCS)) -C $(srcdir) rev-parse --short=10 HEAD)"
+	@$(BASERUBY) $(tooldir)/lib/colorize.rb pass "Latest commit hash = $(shell $(filter-out svn,$(VCS)) -C $(srcdir) rev-parse --short=10 HEAD)"
 endif
 
 # Update dependencies and commit the updates to the current branch.
@@ -339,7 +365,7 @@ update-deps:
 	$(eval deps_dir := $(shell mktemp -d)/$(update_deps))
 	$(eval GIT_DIR := $(shell git -C $(srcdir) rev-parse --absolute-git-dir))
 	git --git-dir=$(GIT_DIR) worktree add $(deps_dir)
-	cp $(srcdir)/tool/config.guess $(srcdir)/tool/config.sub $(deps_dir)/tool
+	cp $(tooldir)/config.guess $(tooldir)/config.sub $(deps_dir)/tool
 	[ -f config.status ] && cp config.status $(deps_dir)
 	cd $(deps_dir) && autoconf && \
 	exec ./configure -q -C --enable-load-relative --disable-install-doc --disable-rubygems 'optflags=-O0' 'debugflags=-save-temps=obj -g'

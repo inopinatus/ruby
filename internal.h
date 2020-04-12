@@ -12,7 +12,7 @@
 #ifndef RUBY_INTERNAL_H
 #define RUBY_INTERNAL_H 1
 
-#include "ruby/config.h"
+#include "ruby/3/config.h"
 
 #ifdef __cplusplus
 # error not for C++
@@ -30,11 +30,8 @@
 
 #include "ruby/ruby.h"
 
-/* Folowing macros were formerlly defined in this header but moved to somewhere
+/* Following macros were formerly defined in this header but moved to somewhere
  * else.  In order to detect them we undef here. */
-
-/* internal/error.h */
-#undef Check_Type
 
 /* internal/class.h */
 #undef RClass
@@ -86,7 +83,7 @@ void ruby_debug_breakpoint(void);
 PRINTF_ARGS(void ruby_debug_printf(const char*, ...), 1, 2);
 
 // show obj data structure without any side-effect
-#define rp(obj) rb_obj_info_dump_loc((VALUE)(obj), __FILE__, __LINE__, __func__)
+#define rp(obj) rb_obj_info_dump_loc((VALUE)(obj), __FILE__, __LINE__, RUBY_FUNCTION_NAME_STRING)
 
 // same as rp, but add message header
 #define rp_m(msg, obj) do { \

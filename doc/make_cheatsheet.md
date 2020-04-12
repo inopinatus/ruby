@@ -36,9 +36,9 @@ $ make check
 It runs (about) three test suites:
 
 * `make test` (a test suite for the interpreter core)
-* `make test-all` : (for all builtin classes and libraries)
-* `make test-spec` : (a conformance test suite for Ruby implementations)
-* `make test-bundler` : (a test suite for the bundler examples)
+* `make test-all` (for all builtin classes and libraries)
+* `make test-spec` (a conformance test suite for Ruby implementations)
+* `make test-bundler` (a test suite for the bundler examples)
 
 ## How to run the test suite with log
 
@@ -94,3 +94,7 @@ Note that `test-coverage.dat` accumulates all runs of `make test-all`.
 Make sure that you remove the file if you want to measure one test run.
 
 You can see the coverage result of CI: https://rubyci.org/coverage
+
+## How to benchmark
+
+see https://github.com/ruby/ruby/tree/master/benchmark#make-benchmark

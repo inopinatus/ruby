@@ -175,7 +175,7 @@ module Reline
 
       whole_buffer = line_editor.whole_buffer.dup
       whole_buffer.taint if RUBY_VERSION < '2.7'
-      if add_hist and whole_buffer and whole_buffer.chomp.size > 0
+      if add_hist and whole_buffer and whole_buffer.chomp("\n").size > 0
         Reline::HISTORY << whole_buffer
       end
 
@@ -188,8 +188,8 @@ module Reline
 
       line = line_editor.line.dup
       line.taint if RUBY_VERSION < '2.7'
-      if add_hist and line and line.chomp.size > 0
-        Reline::HISTORY << line.chomp
+      if add_hist and line and line.chomp("\n").size > 0
+        Reline::HISTORY << line.chomp("\n")
       end
 
       line_editor.reset_line if line_editor.line.nil?
@@ -336,8 +336,14 @@ module Reline
       @ambiguous_width = 2 if Reline::IOGate == Reline::GeneralIO or STDOUT.is_a?(File)
       return if ambiguous_width
       Reline::IOGate.move_cursor_column(0)
-      output.write "\u{25bd}"
-      @ambiguous_width = Reline::IOGate.cursor_pos.x
+      begin
+        output.write "\u{25bd}"
+      rescue Encoding::UndefinedConversionError
+        # LANG=C
+        @ambiguous_width = 1
+      else
+        @ambiguous_width = Reline::IOGate.cursor_pos.x
+      end
       Reline::IOGate.move_cursor_column(0)
       Reline::IOGate.erase_after_cursor
     end

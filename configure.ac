@@ -6,6 +6,8 @@ AC_CONFIG_MACRO_DIRS(tool/m4)
 
 AC_PREREQ(2.67)
 
+tooldir="$srcdir/tool"
+
 dnl   override AC_CHECKING
 dnl   placed here due to aclocal(1)'s
 dnl   ignoring this definition in separate files
@@ -217,6 +219,11 @@ AS_CASE(["$build_os:${CXX}"],
         AC_MSG_RESULT([$CXX])],
     [openbsd*:*], [
         AC_CHECK_TOOLS(CXX, [c++])
+    ],
+    [solaris*:*], [
+        dnl C++ compiler of Sun OpenStudio is not supported
+        AS_CASE(["/$CC "],
+            [*@<:@\ /@:>@"cc "*],      [CXX=no-c++])
     ])
 test -z "$CXX" || ac_cv_prog_CXX="$CXX"
 
@@ -294,7 +301,7 @@ AS_CASE(["$build_os"],
     echo 'int main(void) {return 0;}' > conftest.c
     AS_IF([$CC -framework Foundation -o conftest conftest.c 2>&1 |
 	   grep '^ld: warning: text-based stub file' >/dev/null], [
-	CC_WRAPPER=`cd -P "$srcdir/tool" && pwd`/darwin-cc
+	CC_WRAPPER=`cd -P "${tooldir}" && pwd`/darwin-cc
 	CC="$CC_WRAPPER $CC"
     ])
     rm -fr conftest*
@@ -487,7 +494,11 @@ AS_IF([test x"${RPATHFLAG}" = x], [
     rpathflag=`echo "$RPATHFLAG" | sed 's/%.*//'`
 ])
 
-RUBY_TRY_CFLAGS(-fdeclspec, [RUBY_APPEND_OPTIONS(XCFLAGS, -fdeclspec)])
+RUBY_TRY_CFLAGS(-fdeclspec, [
+  RUBY_APPEND_OPTIONS(CC, -fdeclspec)
+  RUBY_APPEND_OPTIONS(MJIT_CC, -fdeclspec)
+])
+RUBY_TRY_CXXFLAGS(-fdeclspec, [RUBY_APPEND_OPTIONS(CXX, -fdeclspec)])
 
 AS_CASE([$RUBY_PATCHLEVEL], [-*],
 	[RUBY_DEVEL=yes], [RUBY_DEVEL=no])
@@ -538,7 +549,7 @@ AS_CASE(["$GCC:${warnflags+set}:${extra_warnflags:+set}:"],
 		 -Wsuggest-attribute=format \
 		 -Wsuggest-attribute=noreturn \
 		 -Wunused-variable \
-		 -diag-disable=175,188,2259 \
+		 -diag-disable=175,188,1684,2259,2312 \
 		 $extra_warnflags \
 		 ; do
 	AS_IF([test "$particular_werror_flags" != yes], [
@@ -565,6 +576,13 @@ AS_CASE(["$GCC:${warnflags+set}:${extra_warnflags:+set}:"],
     warnflags=
 ])
 RUBY_TRY_CFLAGS(-Qunused-arguments, [RUBY_APPEND_OPTIONS(rb_cv_wsuppress_flags, -Qunused-arguments)])
+AC_COMPILE_IFELSE([
+    AC_LANG_PROGRAM([
+@%:@if !(defined(__SUNPRO_C)||defined(__SUNPRO_CC))
+@%:@error not sunpro
+@%:@endif],[])], [
+    RUBY_TRY_CFLAGS(-erroff=E_STATEMENT_NOT_REACHED, [
+        RUBY_APPEND_OPTIONS(rb_cv_warnflags, -erroff=E_STATEMENT_NOT_REACHED)])],[])
 
 AC_ARG_WITH(compress-debug-sections,
 	AS_HELP_STRING([--with-compress-debug-sections=type],
@@ -1346,10 +1364,13 @@ AS_IF([test "$rb_cv_stdarg" = yes], [
   AC_DEFINE(HAVE_STDARG_PROTOTYPES)
 ])
 
+# __VA_ARGS__ is also tested in AC_PROG_CC_C99 since autoconf 2.60a (around
+# 2006). The check below is redundant and should always success.  Remain not
+# deleted for backward compat.
 AC_CACHE_CHECK(for variable length macro, rb_cv_va_args_macro,
   [AC_TRY_COMPILE([
-int foo(int x, ...);
-@%:@define FOO(a, ...) foo(a, @%:@@%:@__VA_ARGS__)
+int foo(const char*);
+@%:@define FOO(...) foo(@%:@__VA_ARGS__)
 ], [FOO(1);FOO(1,2);FOO(1,2,3);],
   rb_cv_va_args_macro=yes,
   rb_cv_va_args_macro=no)])
@@ -1359,10 +1380,11 @@ AS_IF([test "$rb_cv_va_args_macro" = yes], [
 
 AC_CACHE_CHECK([for alignas() syntax], rb_cv_have_alignas, [
 rb_cv_have_alignas=no
+# Prefer alignas over _Alignas to allow C++ compiler to read ruby.h
 RUBY_WERROR_FLAG([
 for attr in \
-    "_Alignas(x)" \
     "alignas(x)" \
+    "_Alignas(x)" \
     "@<:@@<:@alignas(x)@:>@@:>@" \
     "__declspec(aligned(x))" \
     "__attribute__((__aligned__(x)))" \
@@ -1371,8 +1393,11 @@ do
     # C11 _Alignas and GCC __attribute__((__aligned__)) behave
     # slightly differently.  What we want is GCC's.  Check that
     # here by something C11 does not allow (`struct ALIGNAS ...`)
-    AC_TRY_COMPILE(
-	[@%:@define ALIGNAS(x) $attr
+    AC_TRY_COMPILE([
+       @%:@ifdef HAVE_STDALIGN_H
+        @%:@include <stdalign.h>
+        @%:@endif
+        @%:@define ALIGNAS(x) $attr
 	struct ALIGNAS(128) conftest_tag { int foo; } foo; ], [],
         [rb_cv_have_alignas="$attr"; break], [])
 done
@@ -1383,6 +1408,7 @@ AS_IF([test "$rb_cv_have_alignas" != no], [
 
 AC_CACHE_CHECK([for alignof() syntax], rb_cv_have_alignof,[
 rb_cv_have_alignof=no
+# Prefer alignof over _Alignof to allow C++ compiler to read ruby.h
 RUBY_WERROR_FLAG([
 for expr in \
     "alignof" \
@@ -1472,7 +1498,7 @@ AS_IF([test "$GCC" = yes], [
     ])
 
     AC_CACHE_CHECK([for __atomic builtins], [rb_cv_gcc_atomic_builtins], [
-	AC_TRY_LINK([unsigned char atomic_var;],
+	AC_TRY_LINK([unsigned int atomic_var;],
 		    [
 			__atomic_exchange_n(&atomic_var, 0, __ATOMIC_SEQ_CST);
 			__atomic_exchange_n(&atomic_var, 1, __ATOMIC_SEQ_CST);
@@ -1487,7 +1513,7 @@ AS_IF([test "$GCC" = yes], [
     ])
 
     AC_CACHE_CHECK([for __sync builtins], [rb_cv_gcc_sync_builtins], [
-	AC_TRY_LINK([unsigned char atomic_var;],
+	AC_TRY_LINK([unsigned int atomic_var;],
 		    [
 			__sync_lock_test_and_set(&atomic_var, 0);
 			__sync_lock_test_and_set(&atomic_var, 1);
@@ -1501,6 +1527,7 @@ AS_IF([test "$GCC" = yes], [
     AS_IF([test "$rb_cv_gcc_sync_builtins" = yes], [
 	AC_DEFINE(HAVE_GCC_SYNC_BUILTINS)
     ])
+])
 
     AC_CACHE_CHECK(for __builtin_unreachable, rb_cv_func___builtin_unreachable,
     [RUBY_WERROR_FLAG(
@@ -1513,7 +1540,6 @@ AS_IF([test "$GCC" = yes], [
     AS_IF([test "$rb_cv_func___builtin_unreachable" = yes], [
 	AC_DEFINE_UNQUOTED(UNREACHABLE, [__builtin_unreachable()])
     ])
-])
 
 AC_CACHE_CHECK(for exported function attribute, rb_cv_func_exported, [
 rb_cv_func_exported=no
@@ -2348,8 +2374,8 @@ AS_CASE([$rb_cv_coroutine], [yes|''], [
         [*86-mingw32], [
             rb_cv_coroutine=win32
         ],
-        [armv7*-linux*], [
-            rb_cv_coroutine=ucontext
+        [arm*-linux*], [
+            rb_cv_coroutine=arm32
         ],
         [aarch64-linux*], [
             rb_cv_coroutine=arm64
@@ -2610,6 +2636,10 @@ AS_CASE(["$target_os"],
     ])])
 LIBEXT=a
 
+AC_ARG_WITH(mjit-tabs,
+    AS_HELP_STRING([--without-mjit-tabs], [expand tabs in mjit header]),
+    [AS_IF([test $withval = no], [MJIT_TABS=false])])
+AC_SUBST(MJIT_TABS)dnl
 AC_SUBST(DLDFLAGS)dnl
 AC_SUBST(ARCH_FLAG)dnl
 AC_SUBST(MJIT_HEADER_FLAGS)dnl
@@ -3081,7 +3111,7 @@ AS_IF([test x"$cross_compiling" = xyes], [
   MINIRUBY='./miniruby$(EXEEXT) -I$(srcdir)/lib -I.'
   MINIRUBY="$MINIRUBY"' -I$(EXTOUT)/common'
   PREP='miniruby$(EXEEXT)'
-  RUNRUBY_COMMAND='$(MINIRUBY) $(srcdir)/tool/runruby.rb --extout=$(EXTOUT) $(RUNRUBYOPT)'
+  RUNRUBY_COMMAND='$(MINIRUBY) $(tooldir)/runruby.rb --extout=$(EXTOUT) $(RUNRUBYOPT)'
   RUNRUBY='$(RUNRUBY_COMMAND) --'
   XRUBY='$(RUNRUBY)'
   AS_CASE(["$HAVE_BASERUBY:$build_os"], [no:*|*:mingw*], [BOOTSTRAPRUBY='$(MINIRUBY)'])
@@ -3940,7 +3970,7 @@ guard=INCLUDE_RUBY_CONFIG_H
 } | tr -d '\015' |
 (
   AS_IF([test "x$CONFIGURE_TTY" = xyes], [color=--color], [color=])
-  exec ${srcdir}/tool/ifchange $color "${config_h}" -
+  exec ${tooldir}/ifchange $color "${config_h}" -
 ) >&AS_MESSAGE_FD || AC_MSG_ERROR([failed to create ${config_h}])
 tr -d '\015' < largefile.h > confdefs.h
 rm largefile.h
